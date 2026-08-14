@@ -62,3 +62,11 @@ def test_offsets_stay_aligned_in_mixed_document():
     # в mapping не должно быть пробелов вместо разметки - там текст из оригинала
     assert "#" not in person["original"] and "  " not in person["original"]
     assert person["original"].split()[1:] == ["Анна", "Валерьевна"]
+
+
+def test_caps_name_without_patronymic():
+    """Регулярка держится на отчестве; пара слов капсом без него - работа NER
+    по нормализованному регистру."""
+    from pii_mask.core import Masker
+    masked, _ = Masker().mask("в выборке ВЕРШКОВА ГАЛИНА указана дважды")
+    assert "ВЕРШКОВА" not in masked and "РАИСА" not in masked
