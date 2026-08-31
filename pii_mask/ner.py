@@ -50,6 +50,9 @@ STOP_TERMS = frozenset({
     # домен и сокращения деловой речи
     "ai", "it", "hr", "ib", "иб", "ит", "nda", "p&l", "roi", "tco", "sla",
     "ткп", "тз", "нда", "гост", "ндс", "ооо", "ано", "ип",
+    # товарная номенклатура: родовые слова, которые морфология читает как
+    # форму имени ("саше" - и товар, и дательный падеж "Саша")
+    "саше",
     # служебная верстка документов
     "специализации", "специализация", "занятость", "планирование",
     "анализ данных", "навыки", "образование", "опыт работы", "транскрипт",
@@ -229,18 +232,73 @@ class NatashaNer:
            не персона: "Аналитик", "Желаемая", "Транскрипт". Слово, которого в
            словаре нет вовсе, оставляем персоной - экзотическое имя дороже
            лишней маски.
-        3. Термин из STOP_TERMS - служебное слово верстки, а не сущность.
+        3. Многословная персона без единой граммемы имени - не персона:
+           номенклатура товара ("ГИДРОПЛЕКС Тушь", "Крем АКВАЛЮКС"). См.
+           _looks_like_fio.
+        4. Термин из STOP_TERMS - служебное слово верстки, а не сущность.
            Сравнивается и целиком, и по голове составного термина (см. _TERM_TAIL).
         """
         if "\n" in ent.text:
             return False
         if _is_stop_term(ent.text):
             return False
-        if ent.type == "PERSON" and len(ent.text.split()) == 1:
-            parses = self._morph_vocab.parse(ent.text)
-            if any(p.is_known for p in parses):
-                return any(g in _NAME_GRAMMEMES for p in parses for g in p.tag.grammemes)
+        if ent.type == "PERSON":
+            tokens = ent.text.split()
+            if len(tokens) == 1:
+                parses = self._morph_vocab.parse(ent.text)
+                if any(p.is_known for p in parses):
+                    return any(g in _NAME_GRAMMEMES for p in parses for g in p.tag.grammemes)
+            elif not self._looks_like_fio(tokens):
+                return False
         return True
+
+    def looks_like_person(self, text: str) -> bool:
+        """Похож ли спан на ФИО живого человека, а не на марку товара.
+
+        Требование строже, чем у _looks_like_fio: там мы лишь отсеиваем явную
+        номенклатуру, а здесь спрашиваем положительный признак - хотя бы один
+        токен, который словарь знает как имя, фамилию или отчество. Одиночная
+        незнакомая марка признака не даёт и человеком не считается.
+
+        Включается флагом (Masker.ner_person_needs_fio) и только там, где текст
+        заведомо не о людях - номенклатура товаров, артикулы. В обычном тексте
+        правило вредно: экзотическая фамилия тоже не даёт признака.
+        """
+        for token in text.split():
+            known = [p for p in self._morph_vocab.parse(token) if p.is_known]
+            if any(g in _NAME_GRAMMEMES for p in known for g in p.tag.grammemes):
+                return True
+        return False
+
+    def _looks_like_fio(self, tokens: list[str]) -> bool:
+        """Похож ли многословный спан на ФИО, а не на название товара.
+
+        Настоящее ФИО опознается по граммемам хотя бы одного токена: имя,
+        фамилия или отчество. Если их нет НИ У ОДНОГО токена, а хотя бы один
+        словарь знает как обычное слово - это номенклатура, а не человек:
+        "ГИДРОПЛЕКС Тушь", "Крем АКВАЛЮКС", "Крем-мыло Ромашка".
+
+        Проверка идет по всему спану, а не по каждому токену отдельно, ровно
+        ради обратного случая: фамилия, совпадающая с обычным словом ("Шапка
+        Иван Петрович"), остается человеком - граммемы есть у соседей.
+
+        Спан целиком из слов, которых словарь не знает, оставляем человеком:
+        экзотическое имя дороже лишней маски - тот же довод, что у
+        однословного правила выше.
+
+        Граммемы берутся только у ИЗВЕСТНЫХ разборов. У незнакомого слова
+        pymorphy предсказывает их по суффиксу, и предсказание бывает уверенно
+        неверным: "ГИДРОПЛЕКС" он размечает как имя, после чего "ГИДРОПЛЕКС Тушь"
+        проходит за человека.
+        """
+        known_common = False
+        for token in tokens:
+            known = [p for p in self._morph_vocab.parse(token) if p.is_known]
+            if any(g in _NAME_GRAMMEMES for p in known for g in p.tag.grammemes):
+                return True
+            if known:
+                known_common = True
+        return not known_common
 
     def _tag(self, text: str, shadow: str) -> list[Entity]:
         doc = self._Doc(shadow)

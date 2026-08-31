@@ -49,9 +49,26 @@ def cmd_mask(args: argparse.Namespace) -> int:
         print("для stdin обязателен --mapping", file=sys.stderr)
         return 2
 
-    stem = None if args.file == "-" else Path(args.file).with_suffix("")
-    out = args.output or (f"{stem}.masked.md" if stem else None)
+    src_path = None if args.file == "-" else Path(args.file)
+    is_book = src_path is not None and src_path.suffix.lower() == ".xlsx"
+    is_pdf = src_path is not None and src_path.suffix.lower() == ".pdf"
+    stem = None if src_path is None else src_path.with_suffix("")
+    # Книга остается книгой: отдать .md вместо .xlsx значит вернуть таблицу,
+    # которую уже не открыть тем, чем ее прислали.
+    suffix = ".masked.xlsx" if is_book else ".masked.md"
+    out = args.output or (f"{stem}{suffix}" if stem else None)
     mapping_path = args.mapping or f"{stem}.mapping.json"
+
+    # Пути считаются независимо, поэтому совпасть они могут молча: результат
+    # успешно пишется, а следом затирается тем, что пишется вторым. Наружу это
+    # выглядит как удачный прогон с кодом 0 и испорченным файлом.
+    for a, b, what in ((out, mapping_path, "результат и реестр"),
+                       (out, args.file, "результат и исходный файл"),
+                       (mapping_path, args.file, "реестр и исходный файл")):
+        if a and b and a != "-" and Path(a) == Path(b):
+            print(f"{what} - один и тот же путь ({a}); один затрёт другой",
+                  file=sys.stderr)
+            return 2
 
     types = tuple(t.strip().upper() for t in args.types.split(",")) if args.types else DEFAULT_TYPES
     org_names = ()
@@ -59,16 +76,50 @@ def cmd_mask(args: argparse.Namespace) -> int:
         from .recognizers import load_org_dict
 
         org_names = load_org_dict(args.org_dict)
-    masker = Masker(types=types, ner=not args.no_ner, org_names=org_names)
-    text = _read(args.file)
+    ner_types = (tuple(x.strip().upper() for x in args.ner_types.split(","))
+                 if getattr(args, "ner_types", None) else None)
+    supported_names = ()
+    if getattr(args, 'supported_names', None):
+        supported_names = tuple(
+            line.strip() for line in Path(args.supported_names).read_text(
+                encoding='utf-8').splitlines() if line.strip())
+    masker = Masker(types=types, ner=not args.no_ner, org_names=org_names,
+                    ner_types=ner_types,
+                    ner_org_needs_form=getattr(args, 'ner_org_needs_form', False),
+                    ner_person_needs_fio=getattr(args, 'ner_person_needs_fio', False),
+                    supported_names=supported_names,
+                    inn_needs_label=getattr(args, 'inn_needs_label', False))
     mapping = _load_mapping(mapping_path)  # существующий mapping продолжаем
 
-    if args.audit:
-        masked, mapping = masker.mask_with_audit(text, mapping)
-    else:
-        masked, mapping = masker.mask(text, mapping)
+    if is_book:
+        from . import xlsx
 
-    _write(out, masked)
+        if args.audit:
+            print("--audit для книг пока не поддержан: аудитор работает по тексту",
+                  file=sys.stderr)
+            return 2
+        if out is None or out == "-":
+            print("книгу нельзя писать в stdout - укажи -o файл", file=sys.stderr)
+            return 2
+        mapping = xlsx.mask_workbook(args.file, out, masker, mapping)
+    else:
+        if is_pdf:
+            # PDF читаем текстом и текстом же отдаем: собрать PDF обратно нельзя,
+            # замена другой длины ломает верстку строки (см. pii_mask/pdf.py).
+            from .pdf import PdfError, extract_text
+
+            try:
+                text = extract_text(args.file)
+            except PdfError as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
+        else:
+            text = _read(args.file)
+        if args.audit:
+            masked, mapping = masker.mask_with_audit(text, mapping)
+        else:
+            masked, mapping = masker.mask(text, mapping)
+        _write(out, masked)
     _save_mapping(mapping_path, mapping)
     n = len(mapping["labels"])
     print(f"замаскировано сущностей: {n}; mapping: {mapping_path}", file=sys.stderr)
@@ -117,6 +168,23 @@ def main() -> None:
     p.add_argument("--audit", action="store_true", help="второй проход локальной LLM (Ollama)")
     p.add_argument("--no-ner", action="store_true", help="без Natasha NER (только форматные ПД)")
     p.add_argument("--types", help=f"типы через запятую (дефолт {','.join(DEFAULT_TYPES)})")
+    p.add_argument("--inn-needs-label", dest="inn_needs_label", action="store_true",
+                   help="маскировать ИНН только рядом со словом ИНН: голый номер "
+                        "с валидной контрольной суммой неотличим от артикула")
+    p.add_argument("--supported-names", dest="supported_names",
+                   help="файл с именами, которые документ объявил контрагентами "
+                        "(по одному в строке): строгий режим пропускает их даже "
+                        "без граммем имени")
+    p.add_argument("--ner-person-needs-fio", dest="ner_person_needs_fio",
+                   action="store_true",
+                   help="человека от NER принимать, только если спан похож на ФИО: "
+                        "отсекает одиночные марки товаров")
+    p.add_argument("--ner-org-needs-form", dest="ner_org_needs_form",
+                   action="store_true",
+                   help="организацию от NER принимать только с правовой формой "
+                        "(ООО, ЗАО, ИП): отсекает торговые марки в номенклатуре")
+    p.add_argument("--ner-types", dest="ner_types",
+                   help="каким типам верить со стороны NER (дефолт - всем из --types); напр. PERSON, чтобы марки товаров не уходили в организации")
     p.add_argument("--org-dict", dest="org_dict",
                    help="файл со списком названий организаций (по одному на строку); "
                         "нужен там, где у названия нет ни кавычек, ни орг-формы")

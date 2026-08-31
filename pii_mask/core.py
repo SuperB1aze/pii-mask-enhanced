@@ -47,11 +47,87 @@ class Masker:
         types: tuple[str, ...] = DEFAULT_TYPES,
         ner: bool = True,
         org_names: tuple[str, ...] = (),
+        ner_types: tuple[str, ...] | None = None,
+        ner_org_needs_form: bool = False,
+        ner_person_needs_fio: bool = False,
+        supported_names: tuple[str, ...] = (),
+        inn_needs_label: bool = False,
+        trusted_numbers: frozenset[str] = frozenset(),
     ):
         self.types = set(types)
-        self._use_ner = ner and bool({"PERSON", "ORG", "LOC"} & self.types)
+        # Каким типам верить со стороны NER. None - всем, что просили в types
+        # (прежнее поведение). Ограничение нужно потому, что надежность
+        # угадывания разная по типам: организацию в бухгалтерском документе
+        # видно по правовой форме и без NER, а торговую марку он метит как
+        # организацию и кромсает колонку товаров. ИП с ФИО, наоборот, кроме
+        # него взять неоткуда.
+        self.ner_types = None if ner_types is None else set(ner_types)
+        # Принимать от NER организацию, только если в спане есть правовая форма
+        # (ООО, ЗАО, ИП...). В бухгалтерском документе контрагент всегда с
+        # формой, а торговая марка - никогда: "Nord Systems", "PureStream",
+        # "IFalcon" уходили в маски и кромсали колонку товаров. Резать все
+        # организации от NER нельзя - "ИП Заречная Светлана Леонидовна" он тоже
+        # относит к организациям, и такие живые контрагенты утекали открытыми.
+        self.ner_org_needs_form = ner_org_needs_form
+        # Принимать от NER человека, только если спан похож на ФИО: хотя бы
+        # один токен несёт граммемы имени, фамилии или отчества. Одиночная
+        # незнакомая словарю марка ('Аквабрис', 'Ривалон', 'Экотерм') иначе
+        # уходит в люди - в обычном тексте так и надо (экзотическое имя
+        # дороже лишней маски), но в номенклатуре товаров это шум.
+        self.ner_person_needs_fio = ner_person_needs_fio
+        # Имена, которые документ сам объявил контрагентами - обычно тем,
+        # что назвал их рядом с правовой формой ('ИП Метелина Лилия
+        # Вячеславовна'). Строгий режим пропускает их даже без граммем
+        # имени: словарь не знает фамилию 'Метелина' ровно так же, как не
+        # знает марку 'Аквабрис', и отличает их только документ.
+        self.supported_names = frozenset(n.lower() for n in supported_names)
+        # Маскировать ИНН только рядом со словом ИНН. Голый десятизначный
+        # номер с валидной контрольной суммой неотличим от артикула: сумму
+        # случайное число проходит примерно в одном случае из одиннадцати,
+        # и на тысяче артикулов совпадений набирается десятками. Цена
+        # режима названа прямо: ИНН без подписи будет пропущен.
+        self.inn_needs_label = inn_needs_label
+        # Числа, у которых подпись реквизита стоит в соседней ячейке
+        # таблицы: заполняется тем, кто видит книгу целиком.
+        self.trusted_numbers = frozenset(trusted_numbers)
+        wanted = self.types if self.ner_types is None else self.types & self.ner_types
+        self._use_ner = ner and bool({"PERSON", "ORG", "LOC"} & wanted)
         # названия организаций, заданные снаружи (см. recognizers.load_org_dict)
         self.org_names = tuple(org_names)
+
+    def _ner_org_ok(self, ent) -> bool:
+        """Организация от NER: с правовой формой или без разницы.
+
+        Правило касается ТОЛЬКО организаций и только тех, что предложил NER.
+        Организации, найденные по форме детерминированно, и все прочие типы
+        через эту проверку не проходят - она их не касается.
+        """
+        if ent.type == "ORG" and self.ner_org_needs_form:
+            from .recognizers import ORG_FORM_RE
+
+            return bool(ORG_FORM_RE.search(ent.text))
+        if ent.type == "PERSON" and self.ner_person_needs_fio:
+            from .ner import NatashaNer
+
+            if self._supported(ent):
+                return True
+            return NatashaNer.shared().looks_like_person(ent.text)
+        return True
+
+    def _inn_ok(self, ent) -> bool:
+        """ИНН без подписи в строгом режиме не принимается (см. inn_needs_label)."""
+        if not self.inn_needs_label or ent.type != "INN":
+            return True
+        return ent.source != "bare" or ent.text.strip() in self.trusted_numbers
+
+    def _supported(self, ent) -> bool:
+        """Назвал ли документ это имя контрагентом (см. supported_names)."""
+        if not self.supported_names:
+            return False
+        key = (ent.key or ent.text).lower()
+        if key in self.supported_names:
+            return True
+        return any(tok in self.supported_names for tok in key.split())
 
     # --- mask ---
 
@@ -70,12 +146,24 @@ class Masker:
         if self._use_ner:
             from .ner import NatashaNer
 
-            candidates += [e for e in NatashaNer.shared().extract(text) if e.type in self.types]
+            allowed = self.types if self.ner_types is None else self.types & self.ner_types
+            candidates += [e for e in NatashaNer.shared().extract(text)
+                           if e.type in allowed and self._ner_org_ok(e)]
         if extra_entities:
             # находки аудитора не фильтруем по types (раз LLM сочла это ПД - маскируем),
             # но отбрасываем наши же артефакты: метки и фейки не должны маскироваться
             # вторым слоем, иначе unmask разворачивает только верхний
             candidates += [e for e in extra_entities if not self._is_own_artifact(e.text)]
+
+        # Номер, подписанный реквизитом ХОТЬ ГДЕ в тексте, считается реквизитом
+        # везде: в счете-фактуре тот же ИНН стоит в шапке с подписью, а ниже в
+        # блоке подписей - без нее, и построчная проверка скрыла бы только первое
+        # вхождение.
+        if self.inn_needs_label:
+            confirmed = {e.text.strip() for e in candidates
+                         if e.type == "INN" and e.source == "requisite"}
+            candidates = [e for e in candidates
+                          if self._inn_ok(e) or e.text.strip() in confirmed]
 
         # уже стоящие метки и спаны внутри них неприкосновенны (идемпотентность)
         occupied = [(m.start(), m.end()) for m in LABEL_RE.finditer(text)]
