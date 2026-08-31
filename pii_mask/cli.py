@@ -52,10 +52,12 @@ def cmd_mask(args: argparse.Namespace) -> int:
     src_path = None if args.file == "-" else Path(args.file)
     is_book = src_path is not None and src_path.suffix.lower() == ".xlsx"
     is_pdf = src_path is not None and src_path.suffix.lower() == ".pdf"
+    is_doc = src_path is not None and src_path.suffix.lower() == ".docx"
     stem = None if src_path is None else src_path.with_suffix("")
     # Книга остается книгой: отдать .md вместо .xlsx значит вернуть таблицу,
     # которую уже не открыть тем, чем ее прислали.
-    suffix = ".masked.xlsx" if is_book else ".masked.md"
+    suffix = (".masked.xlsx" if is_book else
+              ".masked.docx" if is_doc else ".masked.md")
     out = args.output or (f"{stem}{suffix}" if stem else None)
     mapping_path = args.mapping or f"{stem}.mapping.json"
 
@@ -91,17 +93,20 @@ def cmd_mask(args: argparse.Namespace) -> int:
                     inn_needs_label=getattr(args, 'inn_needs_label', False))
     mapping = _load_mapping(mapping_path)  # существующий mapping продолжаем
 
-    if is_book:
-        from . import xlsx
+    if is_book or is_doc:
+        from . import docx, xlsx
 
+        what = "книг" if is_book else "документов Word"
         if args.audit:
-            print("--audit для книг пока не поддержан: аудитор работает по тексту",
+            print(f"--audit для {what} пока не поддержан: аудитор работает по тексту",
                   file=sys.stderr)
             return 2
         if out is None or out == "-":
-            print("книгу нельзя писать в stdout - укажи -o файл", file=sys.stderr)
+            print(f"файл этого формата нельзя писать в stdout - укажи -o файл",
+                  file=sys.stderr)
             return 2
-        mapping = xlsx.mask_workbook(args.file, out, masker, mapping)
+        run = xlsx.mask_workbook if is_book else docx.mask_document
+        mapping = run(args.file, out, masker, mapping)
     else:
         if is_pdf:
             # PDF читаем текстом и текстом же отдаем: собрать PDF обратно нельзя,

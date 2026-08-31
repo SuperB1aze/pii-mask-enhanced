@@ -32,7 +32,9 @@ DEFAULT_TYPES = (
 
 _PRIORITY = {
     "EMAIL": 1, "TG": 2, "CARD": 3, "SNILS": 4, "PHONE": 5,
-    "INN": 6, "OGRN": 6, "REQ": 6, "UID": 7, "PASSPORT": 7, "URL": 8,
+    "INN": 6, "OGRN": 6, "KPP": 6, "REQ": 6, "DOCREF": 6, "DATE": 6,
+    "CERT": 6, "UID": 7,
+    "PASSPORT": 7, "URL": 8,
     "ADDRESS": 8, "PERSON": 9, "ORG": 10, "LOC": 11,
 }
 
@@ -114,6 +116,39 @@ class Masker:
             return NatashaNer.shared().looks_like_person(ent.text)
         return True
 
+    @staticmethod
+    def _repeats(text: str, values: set[str], known: list) -> list:
+        """Повторные вхождения уже опознанных значений, которых нет среди находок.
+
+        Ищем буквально: значение уже признано реквизитом по якорю в этом же
+        тексте, поэтому догадываться не о чем - надо лишь не пропустить его там,
+        где якоря рядом не оказалось.
+        """
+        taken = {(e.start, e.end) for e in known}
+        by_value = {}
+        for e in known:
+            by_value.setdefault(e.text.strip(), e)
+        out = []
+        for value in values:
+            if len(value) < 3:
+                continue        # два знака встречаются в тексте случайно
+            src = by_value[value]
+            start = 0
+            while True:
+                at = text.find(value, start)
+                if at < 0:
+                    break
+                start = at + len(value)
+                if (at, start) in taken:
+                    continue
+                before = text[at - 1] if at else " "
+                after = text[start] if start < len(text) else " "
+                # Только целым токеном: иначе номер найдется внутри другого числа.
+                if before.isalnum() or after.isalnum():
+                    continue
+                out.append(Entity(src.type, value, at, start, src.key))
+        return out
+
     def _inn_ok(self, ent) -> bool:
         """ИНН без подписи в строгом режиме не принимается (см. inn_needs_label)."""
         if not self.inn_needs_label or ent.type != "INN":
@@ -164,6 +199,18 @@ class Masker:
                          if e.type == "INN" and e.source == "requisite"}
             candidates = [e for e in candidates
                           if self._inn_ok(e) or e.text.strip() in confirmed]
+
+        # Номер, опознанный по якорному слову хоть где в тексте, скрывается везде:
+        # ниже он повторяется без якоря ("маркетплейса Маркета № 7777777/23"), и
+        # построчная проверка оставляла второе вхождение открытым. Тем же приемом
+        # закрывается КПП, стоящий без подписи рядом с уже подтвержденным ИНН.
+        anchored = {e.text.strip() for e in candidates if e.source == "docref"}
+        anchored |= {e.text.strip() for e in candidates
+                     if e.type in ("INN", "KPP") and e.source == "requisite"}
+        if anchored:
+            extra = [Entity(e.type, e.text, e.start, e.end, e.key, source="repeat")
+                     for e in self._repeats(text, anchored, candidates)]
+            candidates += extra
 
         # уже стоящие метки и спаны внутри них неприкосновенны (идемпотентность)
         occupied = [(m.start(), m.end()) for m in LABEL_RE.finditer(text)]

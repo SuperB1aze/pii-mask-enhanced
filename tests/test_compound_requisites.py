@@ -73,3 +73,23 @@ def test_number_confirmed_once_is_masked_everywhere():
 def test_unlabelled_number_alone_still_ignored():
     """Без подписи где-либо в документе число остается артикулом."""
     assert "1063391630" in _mask("Артикул 1063391630")
+
+
+def test_kpp_is_its_own_type():
+    """КПП выделен из общего REQ отдельным типом.
+
+    В REQ попадает и номер первичного документа ("№ 4"), который маскировать
+    нельзя - без него книга не сверяется с первичкой. Поэтому КПП включается
+    отдельно, а не вместе со всеми реквизитами.
+    """
+    m = Masker(types=("INN", "KPP"), inn_needs_label=True)
+    out = m.mask(f"ИНН/КПП {INN}/{KPP}")[0]
+    assert INN not in out and KPP not in out
+    assert "{{KPP_1}}" in out
+
+
+def test_kpp_off_by_default_leaves_document_numbers():
+    """Без KPP в наборе номер документа остается на месте."""
+    m = Masker(types=("INN",), inn_needs_label=True)
+    assert KPP in m.mask(f"ИНН/КПП {INN}/{KPP}")[0]
+    assert "№ 4" in m.mask("Документ № 4")[0]

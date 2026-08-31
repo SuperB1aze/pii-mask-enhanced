@@ -292,7 +292,17 @@ def test_requisite_keeps_keyword_visible():
 
 
 def test_requisite_unknown_keyword_gets_own_type():
-    ents = types_of("КПП 770801001 в карточке", "REQ")
+    """Реквизит без своего типа попадает в общий REQ.
+
+    Пример сменен с КПП на БИК: у КПП с 31.08.2026 есть собственный тип, чтобы
+    его можно было включать отдельно от номеров документов (см. test_compound_requisites).
+    """
+    ents = types_of("БИК 044525225 в карточке", "REQ")
+    assert [e.text for e in ents] == ["044525225"]
+
+
+def test_kpp_has_its_own_type():
+    ents = types_of("КПП 770801001 в карточке", "KPP")
     assert [e.text for e in ents] == ["770801001"]
 
 
@@ -336,7 +346,7 @@ def test_registry_number_is_a_requisite():
 
 def test_requisite_wrapped_after_keyword():
     """Карточка организации верстается узкой колонкой и рвется где попало."""
-    ents = types_of("Идентификационный номер: КПП\n770801001.", "REQ")
+    ents = types_of("Идентификационный номер: КПП\n770801001.", "KPP")
     assert [e.text for e in ents] == ["770801001"]
 
 
