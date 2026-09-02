@@ -15,7 +15,7 @@ from __future__ import annotations
 import copy
 import re
 
-from .recognizers import Entity, digits, find_format_entities
+from .recognizers import DATE_AFTER_RE, Entity, digits, find_format_entities
 
 LABEL_RE = re.compile(r"\{\{([A-Z]+)_(\d+)\}\}")
 PHONE_SCAN_RE = re.compile(r"\+?[78][\d \-()]{9,18}\d")
@@ -33,6 +33,7 @@ DEFAULT_TYPES = (
 _PRIORITY = {
     "EMAIL": 1, "TG": 2, "CARD": 3, "SNILS": 4, "PHONE": 5,
     "INN": 6, "OGRN": 6, "KPP": 6, "REQ": 6, "DOCREF": 6, "DATE": 6,
+    "BIK": 6, "ACCOUNT": 6,
     "CERT": 6, "UID": 7,
     "PASSPORT": 7, "URL": 8,
     "ADDRESS": 8, "PERSON": 9, "ORG": 10, "LOC": 11,
@@ -116,6 +117,49 @@ class Masker:
             return NatashaNer.shared().looks_like_person(ent.text)
         return True
 
+    def _person_token_repeats(self, text: str, known: list) -> list:
+        """Слова подтвержденных ФИО, оставшиеся открытыми в других местах.
+
+        Берем только то, что уже признано частью персоны в этом же документе,
+        поэтому догадываться не о чем. Инициалы и короткие слова пропускаем:
+        "О." и "ИП" встречаются в тексте случайно.
+        """
+        if "PERSON" not in self.types:
+            return []
+        from .ner import _is_stop_term
+
+        taken = {(e.start, e.end) for e in known}
+        tokens = set()
+        for ent in known:
+            if ent.type != "PERSON":
+                continue
+            for tok in ent.text.replace(",", " ").split():
+                tok = tok.strip(".,;:()\"'\u00ab\u00bb")
+                if len(tok) >= 4 and tok[:1].isupper() and not _is_stop_term(tok):
+                    tokens.add(tok)
+        out = []
+        for tok in tokens:
+            for m in re.finditer(rf"(?<![\w-]){re.escape(tok)}(?![\w-])", text):
+                if (m.start(), m.end()) in taken:
+                    continue
+                out.append(Entity("PERSON", tok, m.start(), m.end(),
+                                  tok.lower(), source="person-token"))
+        return out
+
+    def _dates_after_docrefs(self, text: str, known: list) -> list:
+        """Дата сразу за номером документа: "№ 260 от 01.09.2026"."""
+        if "DATE" not in self.types:
+            return []
+        out = []
+        for ent in known:
+            if ent.type != "DOCREF":
+                continue
+            m = DATE_AFTER_RE.match(text, ent.end)
+            if m:
+                out.append(Entity("DATE", m.group(1), m.start(1), m.end(1),
+                                  m.group(1).lower(), source="docdate"))
+        return out
+
     @staticmethod
     def _repeats(text: str, values: set[str], known: list) -> list:
         """Повторные вхождения уже опознанных значений, которых нет среди находок.
@@ -144,7 +188,17 @@ class Masker:
                 before = text[at - 1] if at else " "
                 after = text[start] if start < len(text) else " "
                 # Только целым токеном: иначе номер найдется внутри другого числа.
-                if before.isalnum() or after.isalnum():
+                # Исключение - "г" сразу за датой ("01.09.2026г."): в бланках его
+                # пишут слитно, и по букве повтор считал дату частью другого
+                # слова. Одно вхождение закрывалось, соседнее оставалось.
+                tail_year = (src.type == "DATE" and after in "гГ"
+                             and text[start + 1: start + 2] in {".", "", " ", "\n", ","})
+                if before.isalnum() or (after.isalnum() and not tail_year):
+                    continue
+                if tail_year:
+                    start += 2 if text[start + 1: start + 2] == "." else 1
+                    value_here = text[at:start]
+                    out.append(Entity(src.type, value_here, at, start, src.key))
                     continue
                 out.append(Entity(src.type, value, at, start, src.key))
         return out
@@ -204,13 +258,35 @@ class Masker:
         # ниже он повторяется без якоря ("маркетплейса Маркета № 7777777/23"), и
         # построчная проверка оставляла второе вхождение открытым. Тем же приемом
         # закрывается КПП, стоящий без подписи рядом с уже подтвержденным ИНН.
+        # Фамилия, подтвержденная как часть ФИО хоть в одном месте документа,
+        # закрывается везде. Прецедент: в шапке счета NER принял фамилию за
+        # организацию, строгий режим "организация только с правовой формой" ее
+        # отбросил, и она осталась открытой - при том что в подвале та же
+        # фамилия с инициалами была замаскирована. Документ выглядел
+        # обезличенным, а предприниматель в нем назван.
+        candidates += self._person_token_repeats(text, candidates)
+
         anchored = {e.text.strip() for e in candidates if e.source == "docref"}
         anchored |= {e.text.strip() for e in candidates
                      if e.type in ("INN", "KPP") and e.source == "requisite"}
+        # Дата основания повторяется ниже в табличной строке, где перенос строки
+        # разрывает связку "от <дата>" - туда дотягивается только повтором.
         if anchored:
             extra = [Entity(e.type, e.text, e.start, e.end, e.key, source="repeat")
                      for e in self._repeats(text, anchored, candidates)]
             candidates += extra
+
+        # Дата рядом с номером документа - строго после повторов: номер в строке
+        # "Основание:" находится не своим якорем, а повтором из табличной части,
+        # и до этого шага его среди кандидатов еще нет.
+        dates = self._dates_after_docrefs(text, candidates)
+        if dates:
+            candidates += dates
+            # Ниже та же дата стоит в табличной ячейке, где перенос строки рвет
+            # связку "от <дата>", - туда дотягивается только повтором.
+            candidates += [Entity(e.type, e.text, e.start, e.end, e.key, source="repeat")
+                           for e in self._repeats(
+                               text, {e.text.strip() for e in dates}, candidates)]
 
         # уже стоящие метки и спаны внутри них неприкосновенны (идемпотентность)
         occupied = [(m.start(), m.end()) for m in LABEL_RE.finditer(text)]
