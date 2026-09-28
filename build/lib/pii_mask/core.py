@@ -236,6 +236,87 @@ class Masker:
                 out.append(Entity(src.type, value, at, start, src.key))
         return out
 
+    # Второе имя сразу за названием: "Ромашка (Romashka)", "Агентство ... (АСИ)".
+    # Скобка тут не пояснение, а тот же работодатель другими буквами, и без
+    # этого правила он остается в тексте открытым рядом с собственной маской.
+    _ALIAS_RE = re.compile(r"[ \t]*\(([A-ZА-ЯЁ][A-Za-zА-Яа-яЁё0-9 .&-]{1,30})\)")
+
+    @staticmethod
+    def _bracket_aliases(text: str, known: list) -> list:
+        out = []
+        for src in known:
+            if src.type != "ORG":
+                continue
+            m = Masker._ALIAS_RE.match(text, src.end)
+            if not m:
+                continue
+            alias = m.group(1).strip()
+            # Пояснение в скобках - это фраза; второе имя короткое.
+            if len(alias.split()) > 3:
+                continue
+            out.append(Entity("ORG", alias, m.start(1), m.end(1), src.key))
+        return out
+
+    def _org_token_repeats(self, text: str, known: list) -> list:
+        """Слова подтвержденных названий, оставшиеся открытыми в других местах.
+
+        Прецедент (резюме, 28.09.2026): работодатель попал в маску один раз - в
+        составе более длинного спана ("Ромашка NDA-блок"), - а двадцать семь
+        остальных вхождений остались в тексте. Снаружи документ выглядит
+        обезличенным: метка в нем есть.
+
+        Берем из подтвержденной организации слова с большой буквы длиной от пяти
+        знаков и закрываем их повторы вместе с окончанием. Короткие слова и
+        служебные термины не берем - они встречаются в тексте случайно. Тот же
+        прием уже работает для фамилий (_person_token_repeats) и реквизитов.
+        """
+        from .ner import STOP_TERMS, NatashaNer
+
+        if not self._use_ner:
+            # Без NER подтвержденные названия приходят из словаря и по правовой
+            # форме; разбирать их на слова нечем - морфология здесь и есть
+            # единственная защита от закрытия обычных слов.
+            return []
+        ner = NatashaNer.shared()
+        taken = {(e.start, e.end) for e in known}
+        tokens: dict[str, object] = {}
+        for src in known:
+            if src.type != "ORG":
+                continue
+            # Аббревиатуру капсом берем от трех знаков ("АСИ"), обычное слово -
+            # от пяти: короткое слово со строчными буквами встречается в тексте
+            # случайно, а аббревиатура капсом - почти никогда.
+            words = (re.findall(r"\b[А-ЯЁA-Z]{3,}\b", src.text)
+                     + re.findall(r"[А-ЯЁA-Z][\w-]{4,}", src.text))
+            for word in words:
+                # Обычное слово словаря не берем: "Россия" из "Ромашка
+                # Россия" закрыла бы "России" по всему тексту. Берем то, чего
+                # словарь не знает ("Ромашка", "Светопись"), и то, что он знает
+                # названием организации.
+                if word.lower() in STOP_TERMS or ner.known_common_word(word):
+                    continue
+                tokens.setdefault(word, src)
+        out = []
+        for word, src in tokens.items():
+            # Аббревиатуру не укорачиваем: она не склоняется, а "АСИ" при
+            # срезании последней гласной превращалось в "АС" и отсеивалось
+            # порогом - при том что как название оно уже подтверждено.
+            stem = (word if word.isupper()
+                    else word[:-1] if word[-1].lower() in "аеёиоуыэюяьй" else word)
+            # Тот же порог, что и при сборе: аббревиатура капсом - от трех
+            # знаков, обычное слово - от пяти. Порог стоял только на сборе, и
+            # "АСИ" отсеивался здесь, уже будучи признанным названием.
+            if len(stem) < (3 if word.isupper() else 5):
+                continue
+            for m in re.finditer(re.escape(stem) + r"[а-яёa-z]{0,3}\b", text):
+                if (m.start(), m.end()) in taken:
+                    continue
+                if m.start() and (text[m.start() - 1].isalnum()
+                                  or text[m.start() - 1] in "-_"):
+                    continue
+                out.append(Entity(src.type, m.group(), m.start(), m.end(), src.key))
+        return out
+
     @staticmethod
     def _org_case_repeats(text: str, known: list) -> list:
         """Подтвержденная организация в косвенном падеже.
@@ -365,6 +446,18 @@ class Masker:
         # Организация в косвенном падеже - после всех остальных находок: она
         # прирастает к уже признанному названию, а не ищется сама по себе.
         candidates += self._org_case_repeats(text, candidates)
+        # Слово из подтвержденного названия, оставшееся открытым в другом месте.
+        candidates += self._org_token_repeats(text, candidates)
+        # Второе имя в скобках: "Ромашка (Romashka)", "Агентство ... (АСИ)". Строго
+        # после повторов - название перед скобкой само бывает найдено повтором,
+        # а не распознавателем (так и было: в заголовке резюме работодатель
+        # закрывался повтором из другого места, и скобка рядом оставалась).
+        aliases = self._bracket_aliases(text, candidates)
+        if aliases:
+            candidates += aliases
+            # И еще раз повторы: аббревиатура из скобок ниже по тексту стоит
+            # сама по себе, и закрыть ее нужно там тоже.
+            candidates += self._org_token_repeats(text, candidates + aliases)
 
         # уже стоящие метки и спаны внутри них неприкосновенны (идемпотентность)
         occupied = [(m.start(), m.end()) for m in LABEL_RE.finditer(text)]

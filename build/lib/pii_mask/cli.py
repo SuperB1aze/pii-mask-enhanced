@@ -85,9 +85,27 @@ def cmd_mask(args: argparse.Namespace) -> int:
         supported_names = tuple(
             line.strip() for line in Path(args.supported_names).read_text(
                 encoding='utf-8').splitlines() if line.strip())
+    needs_form = getattr(args, "ner_org_needs_form", False)
+    if needs_form and getattr(args, "auto_profile", False):
+        # Требование правовой формы придумано для выгрузок 1С; на резюме оно
+        # оставляет открытыми почти все места работы (3 организации против 62
+        # на живом файле). Поэтому для резюме его снимаем - но говорим об этом
+        # в stderr: молчаливая смена режима означала бы, что два прогона одного
+        # файла необъяснимо дают разный результат.
+        from . import profile
+
+        probe = _probe_text(args.file, is_book, is_doc, is_pdf)
+        if probe is None:
+            print("профиль: определить не удалось, остаюсь в строгом режиме",
+                  file=sys.stderr)
+        else:
+            print(profile.describe(probe), file=sys.stderr)
+            if profile.looks_like_resume(probe):
+                needs_form = False
+
     masker = Masker(types=types, ner=not args.no_ner, org_names=org_names,
                     ner_types=ner_types,
-                    ner_org_needs_form=getattr(args, 'ner_org_needs_form', False),
+                    ner_org_needs_form=needs_form,
                     ner_person_needs_fio=getattr(args, 'ner_person_needs_fio', False),
                     supported_names=supported_names,
                     inn_needs_label=getattr(args, 'inn_needs_label', False))
@@ -162,6 +180,28 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _probe_text(path, is_book: bool, is_doc: bool, is_pdf: bool) -> str | None:
+    """Текст документа для определения профиля; None - прочитать не вышло.
+
+    Книгу Excel не пробуем вовсе: резюме в виде таблицы с формулами не бывает,
+    а собирать ради этого весь лист - лишняя работа на каждом прогоне.
+    """
+    try:
+        if is_book:
+            return None
+        if is_doc:
+            from .docx import paragraph_texts
+
+            return "\n".join(paragraph_texts(path))
+        if is_pdf:
+            from .pdf import extract_text
+
+            return extract_text(path)
+        return _read(path)
+    except Exception:                                 # noqa: BLE001
+        return None
+
+
 def _cmd_where() -> int:
     """Путь импортированного модуля, а не путь бинаря.
 
@@ -203,6 +243,10 @@ def main() -> None:
                         "(ООО, ЗАО, ИП): отсекает торговые марки в номенклатуре")
     p.add_argument("--ner-types", dest="ner_types",
                    help="каким типам верить со стороны NER (дефолт - всем из --types); напр. PERSON, чтобы марки товаров не уходили в организации")
+    p.add_argument("--auto-profile", dest="auto_profile", action="store_true",
+                   help="определить по документу, резюме это или деловая бумага, и "
+                        "снять требование правовой формы для резюме "
+                        "(действует только вместе с --ner-org-needs-form)")
     p.add_argument("--org-dict", dest="org_dict",
                    help="файл со списком названий организаций (по одному на строку); "
                         "нужен там, где у названия нет ни кавычек, ни орг-формы")

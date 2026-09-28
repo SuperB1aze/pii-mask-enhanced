@@ -72,3 +72,25 @@ def test_latin_twin_in_brackets_is_closed():
             "Опыт в Ромашке: пять лет.")
     out = mask(text)
     assert "Romashka" not in out, out
+
+
+def test_business_abbreviations_are_not_companies():
+    """ТМЦ, ПТО, ЕГРЮЛ - термины делопроизводства, а не места работы.
+
+    На резюме бухгалтера они уходили в маски и делали обязанности нечитаемыми:
+    "учет {{ORG_2}}" вместо "учет ТМЦ".
+    """
+    out = mask("Учет ТМЦ и первички, сметы от ПТО, выписки из ЕГРЮЛ и ЕГРИП")
+    assert "{{ORG" not in out, out
+
+
+def test_duty_phrase_is_not_a_company():
+    """Обязанность начинается с отглагольного существительного, название - нет."""
+    out = mask("Организация движения и учета документов. Полное ведение участка.")
+    assert "{{ORG" not in out, out
+
+
+def test_multiword_company_survives():
+    """Чистка не должна съесть название из нескольких слов со строчными."""
+    out = mask("Московский Государственный Университет пищевых продуктов, 1998")
+    assert "{{ORG" in out, out
