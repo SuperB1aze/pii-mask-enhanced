@@ -257,6 +257,28 @@ class Masker:
             out.append(Entity("ORG", alias, m.start(1), m.end(1), src.key))
         return out
 
+    def _without_geo_persons(self, candidates: list) -> list:
+        """Убрать персоны, начатые географическим названием.
+
+        Правило "Фамилия И.О." форматного распознавателя приняло за фамилию
+        страну: "России Б.Н. Ельцина" в названии вуза. NER такие спаны не
+        отдает - у него свой отсев, - а форматный путь морфологии не знает,
+        поэтому проверка живет здесь.
+        """
+        if not self._use_ner:
+            return candidates
+        from .ner import NatashaNer
+
+        ner = NatashaNer.shared()
+        out = []
+        for ent in candidates:
+            if ent.type == "PERSON":
+                head = ent.text.strip().split()[0] if ent.text.strip() else ""
+                if head and ner.is_geography(head):
+                    continue
+            out.append(ent)
+        return out
+
     def _org_token_repeats(self, text: str, known: list) -> list:
         """Слова подтвержденных названий, оставшиеся открытыми в других местах.
 
@@ -446,6 +468,7 @@ class Masker:
         # Организация в косвенном падеже - после всех остальных находок: она
         # прирастает к уже признанному названию, а не ищется сама по себе.
         candidates += self._org_case_repeats(text, candidates)
+        candidates = self._without_geo_persons(candidates)
         # Слово из подтвержденного названия, оставшееся открытым в другом месте.
         candidates += self._org_token_repeats(text, candidates)
         # Второе имя в скобках: "Ромашка (Romashka)", "Агентство ... (АСИ)". Строго

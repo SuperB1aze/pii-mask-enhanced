@@ -516,6 +516,24 @@ def snils_ok(num: str) -> bool:
     return chk == expected
 
 
+# Дата рождения - прямой идентификатор, в отличие от дат опыта работы, которые в
+# резюме трогать нельзя (без них документ нечитаем). Различает их только якорь:
+# "родилась 26 марта 1997", "Дата рождения: 26.03.1997", "д.р. 26.03.1997".
+_МЕСЯЦЫ = ("январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр")
+BIRTH_DATE_RE = re.compile(
+    r"(?:родил(?:ся|ась)|дата\s+рождения\s*[:\-]?|д\.?\s?р\.?\s*[:\-]?)\s*"
+    rf"(\d{{1,2}}[./]\d{{1,2}}[./]\d{{2,4}}|\d{{1,2}}\s+(?:{_МЕСЯЦЫ})\w*\s+\d{{4}})",
+    re.IGNORECASE)
+
+# Город проживания в шапке резюме: он про человека, а не про организацию, и в
+# связке с узкой должностью сужает круг до единиц. Якорь узкий намеренно -
+# город внутри названия компании ("ООО «Екатеринбург-Строй»") не трогаем.
+RESIDENCE_RE = re.compile(
+    r"(?:проживает|проживание|город проживания|место жительства|город)\s*[:\-]\s*"
+    r"([А-ЯЁ][а-яё]+(?:[ -][А-ЯЁ][а-яё]+){0,2})",
+    re.IGNORECASE)
+
+
 def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Entity]:
     """org_names - названия организаций, заданные снаружи (см. load_org_dict).
 
@@ -524,6 +542,14 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
     слова. Такие случаи закрываются только тем, что кто-то назвал их явно.
     """
     out: list[Entity] = []
+
+    for m in BIRTH_DATE_RE.finditer(text):
+        out.append(Entity("DATE", m.group(1), m.start(1), m.end(1),
+                          m.group(1).lower(), source="birth"))
+
+    for m in RESIDENCE_RE.finditer(text):
+        out.append(Entity("ADDRESS", m.group(1), m.start(1), m.end(1),
+                          m.group(1).lower(), source="residence"))
 
     for m in EMAIL_RE.finditer(text):
         if not FAKE_EMAIL_RE.match(m.group()):
