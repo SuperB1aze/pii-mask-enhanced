@@ -105,3 +105,19 @@ def test_verb_at_the_start_is_not_a_company():
     out = mask("- Автоматизировал блок адаптации и назначение целей\n"
                "- Запускал образовательные проекты под ключ")
     assert "{{ORG" not in out, out
+
+
+def test_own_name_in_quotes_without_generic_word():
+    """Кавычки с одним словом - название, даже когда родового слова рядом нет.
+
+    В резюме так пишут свои проекты и бизнесы: “Zaprosto”, "Кураж+". Кавычки с
+    фразой внутри названием не считаем - в них цитаты и оговорки.
+    """
+    out = mask('Бизнесы: 2002-2006 “Romashka” смс агрегатор, затем "Vasilek" сервис')
+    assert "Romashka" not in out, out
+    assert "Vasilek" not in out, out
+
+
+def test_quoted_phrase_is_not_a_name():
+    out = mask('Девиз: «Перевожу с it-технического на человеческий» и «до 60 в месяц»')
+    assert "{{ORG" not in out, out
