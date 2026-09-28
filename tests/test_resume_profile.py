@@ -68,3 +68,33 @@ def test_short_cv_is_recognized_by_periods():
 def test_invoice_with_periods_is_still_paper():
     """КПП и ИНН перевешивают: резюме с расчетными реквизитами не бывает."""
     assert not looks_like_resume(СЧЕТ)
+
+
+МИНИМАЛЬНОЕ_CV = """Мария Петрова
+Product Analyst | Продуктовый аналитик | SQL Python
++7 916 000-00-02   tg: @petrova   petrova@example.ru
+
+О себе
+Аналитик данных с 1,5 годами коммерческого опыта в BI и DWH.
+
+Стек: SQL, Python, Airflow
+Проекты
+Образование
+2022 – 2026 Университет
+"""
+
+
+def test_cv_with_dash_periods_and_contact_line():
+    """Резюме без слов "опыт работы": периоды через тире и строка контактов.
+
+    Промах 28.09.2026: такое резюме определилось деловым документом, включился
+    строгий режим - и имя кандидата осталось в тексте открытым.
+    """
+    assert looks_like_resume(МИНИМАЛЬНОЕ_CV)
+
+
+def test_letter_with_a_phone_is_not_a_resume():
+    """Одна контактная строка резюме не делает."""
+    письмо = ("Добрый день! Направляю коммерческое предложение по договору.\n"
+              "С уважением, отдел продаж, +7 916 000-00-02, sales@example.ru")
+    assert not looks_like_resume(письмо)

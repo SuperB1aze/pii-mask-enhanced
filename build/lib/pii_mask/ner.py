@@ -256,6 +256,11 @@ class NatashaNer:
                                   ent.start, end, text[ent.start:end].lower()))
         return out
 
+    def is_geography(self, word: str) -> bool:
+        """Словарь знает это слово только географическим названием."""
+        parses = [p for p in self._morph_vocab.parse(word.capitalize()) if p.is_known]
+        return bool(parses) and all("Geox" in p.tag.grammemes for p in parses)
+
     def known_common_word(self, word: str) -> bool:
         """Словарь знает это слово обычным - не названием и не именем.
 
@@ -353,6 +358,16 @@ class NatashaNer:
     def _plausible(self, ent: Entity) -> bool:
         if self._is_junk_span(ent):
             return False
+        # Географическое название - не человек. Прецедент: "России" из
+        # "университет имени первого Президента России" уходило в маску
+        # персоной, и в документе появлялся несуществующий сотрудник.
+        # Тип LOC у нас свой и по умолчанию не маскируется - решает его
+        # правило, а не эта проверка.
+        if ent.type == "PERSON" and " " not in ent.text.strip():
+            parses = [p for p in self._morph_vocab.parse(ent.text.strip().capitalize())
+                      if p.is_known]
+            if parses and all("Geox" in p.tag.grammemes for p in parses):
+                return False
 
         """Отсев заведомого мусора NER на верстке резюме и выгрузок.
 

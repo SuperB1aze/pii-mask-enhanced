@@ -58,3 +58,24 @@ def test_geography_before_initials_is_not_a_surname():
                types=("PERSON",))
     assert "{{PERSON_1}} Ельцина" not in out, out
     assert "России" in out, out
+
+
+def test_profile_nickname_is_masked():
+    """Ник на площадке - такой же идентификатор, как ник в мессенджере."""
+    out = mask("Контакты: tg: @petrova   github: raz00mt   habr: mariap",
+               types=("TG",), ner=False)
+    assert "raz00mt" not in out, out
+    assert "mariap" not in out, out
+
+
+def test_stack_line_has_no_employers():
+    """Строка стека - перечень инструментов, работодателей там не бывает.
+
+    На резюме аналитика в маски ушли Looker, Grafana, Greenplum, Trino,
+    Airflow, Miro - документ после этого нечитаем, а стоп-список на каждый
+    инструмент не напасешься.
+    """
+    out = mask("Стек: Looker, Grafana, Greenplum, Trino, Airflow, Miro\n"
+               "Работала в ЗАО «Ромашка»", types=("ORG",))
+    assert "Looker" in out and "Grafana" in out, out
+    assert "{{ORG" in out, "работодатель ниже должен остаться замаскированным"

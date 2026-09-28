@@ -215,6 +215,8 @@ class NatashaNer:
             key = (ent.type, ent.start, ent.end)
             if key in seen or not self._plausible(ent):
                 continue
+            if ent.type == "ORG" and self._in_stack_line(text, ent):
+                continue
             seen.add(key)
             out.append(ent)
         out += self._surname_by_patronymic(text, out)
@@ -354,6 +356,23 @@ class NatashaNer:
             if all(known_common):
                 return True
         return False
+
+    # Строка перечня инструментов. Работодателей в ней не бывает, а инструментов
+    # столько, что стоп-список за ними не поспевает: на резюме аналитика в маски
+    # ушли Looker, Grafana, Greenplum, Trino, Airflow, Miro за один прогон.
+    # Заголовок бывает распространенным: не только "Стек:", но и "Инструменты
+    # аналитики и визуализации:", "Технологии хранения и обработки данных:".
+    _STACK_LINE = re.compile(
+        # Без "^": match() и так привязывает к позиции, а "^" на ней НЕ
+        # совпадает - только в начале строки текста. На этом правило молча не
+        # срабатывало, хотя заголовок был прямо перед спаном.
+        r"[ \t>*-]*(?:стек|навыки|инструменты|технологии|hard skills|tech stack"
+        r"|владею|знание инструментов|дополнительно|языки и библиотеки"
+        r"|базы данных|бд|аналитика|визуализация)[^:\n]{0,60}[:：]", re.IGNORECASE)
+
+    def _in_stack_line(self, text: str, ent: Entity) -> bool:
+        start = text.rfind("\n", 0, ent.start) + 1
+        return bool(self._STACK_LINE.match(text, start))
 
     def _plausible(self, ent: Entity) -> bool:
         if self._is_junk_span(ent):

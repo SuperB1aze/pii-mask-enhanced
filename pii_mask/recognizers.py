@@ -516,6 +516,13 @@ def snils_ok(num: str) -> bool:
     return chk == expected
 
 
+# Ник на площадке: "github: raz00mt", "habr: mariap". Опознает человека не хуже
+# ника в мессенджере - по нему находится профиль со всей историей, - а ловится
+# только якорем: сам по себе это обычное слово.
+PROFILE_NICK_RE = re.compile(
+    r"\b(?:github|gitlab|bitbucket|habr|behance|dribbble|kaggle|hh|linkedin)"
+    r"\s*[:：]\s*([A-Za-z][\w.-]{2,38})", re.IGNORECASE)
+
 # Дата рождения - прямой идентификатор, в отличие от дат опыта работы, которые в
 # резюме трогать нельзя (без них документ нечитаем). Различает их только якорь:
 # "родилась 26 марта 1997", "Дата рождения: 26.03.1997", "д.р. 26.03.1997".
@@ -542,6 +549,10 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
     слова. Такие случаи закрываются только тем, что кто-то назвал их явно.
     """
     out: list[Entity] = []
+
+    for m in PROFILE_NICK_RE.finditer(text):
+        out.append(Entity("TG", m.group(1), m.start(1), m.end(1),
+                          m.group(1).lower(), source="profile"))
 
     for m in BIRTH_DATE_RE.finditer(text):
         out.append(Entity("DATE", m.group(1), m.start(1), m.end(1),
