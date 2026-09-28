@@ -23,6 +23,26 @@ FAKE_EMAIL_SCAN_RE = re.compile(r"user\d+@example\.com", re.IGNORECASE)
 
 UNKNOWN = "[неизвестное значение]"
 
+# Типографские близнецы дефиса и пробела ломают токенизацию: неразрывный дефис
+# U+2011 превращает составное название в мусор, и распознаватель не видит ни
+# организацию, ни стоящую рядом фамилию. Прецедент 28.09.2026 - резюме в PDF,
+# собранное нашим же генератором: 21 такой дефис, документ выглядел
+# обезличенным, а человек и работодатель в нем названы.
+#
+# Нормализуем только текст, ПО КОТОРОМУ ищем; наружу отдаем символы клиента как
+# были - маскер зовут и на ячейке Excel, и на абзаце Word, и подменять там
+# дефисы значило бы править чужой документ по дороге. Все замены 1:1 по длине,
+# поэтому позиции сущностей не смещаются. Тире (U+2013, U+2014) не трогаем: это
+# не дефис, внутри слова оно не встречается и токенизацию не ломает.
+_TYPO_TWINS = {"\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2212": "-",
+               "\u00a0": " ", "\u202f": " ", "\u2007": " "}
+_TYPO_RE = re.compile("[" + "".join(_TYPO_TWINS) + "]")
+
+
+def normalize_for_analysis(text: str) -> str:
+    """Свести типографские близнецы к простым символам, не меняя длину."""
+    return _TYPO_RE.sub(lambda m: _TYPO_TWINS[m.group()], text)
+
 DEFAULT_TYPES = (
     "PERSON", "ORG", "PHONE", "EMAIL", "CARD", "INN", "OGRN", "UID", "REQ",
     "SNILS", "PASSPORT", "TG", "URL", "ADDRESS",
@@ -203,6 +223,34 @@ class Masker:
                 out.append(Entity(src.type, value, at, start, src.key))
         return out
 
+    @staticmethod
+    def _org_case_repeats(text: str, known: list) -> list:
+        """Подтвержденная организация в косвенном падеже.
+
+        В резюме работодатель назван дважды: строкой опыта ("Ромашка,
+        02.2014") и фразой в саммари ("11 лет в Ромашке"). NER размечает
+        первую и пропускает вторую, а буквальный повтор (_repeats) ее не видит:
+        окончание другое. Документ при этом выглядит обезличенным - метка в нем
+        есть, - но аффилиация названа прямым текстом.
+
+        Ищем не морфологией, а хвостом: к уже признанному названию прирастает
+        одно-три русских окончания. Название короче пяти знаков не берем -
+        "Мир" нашелся бы в "Мира" и в половине текста.
+        """
+        taken = {(e.start, e.end) for e in known}
+        out = []
+        for src in known:
+            if src.type != "ORG" or len(src.text.strip()) < 5:
+                continue
+            value = src.text.strip()
+            for m in re.finditer(re.escape(value) + r"[а-яё]{1,3}\b", text):
+                if (m.start(), m.end()) in taken:
+                    continue
+                if m.start() and text[m.start() - 1].isalnum():
+                    continue
+                out.append(Entity(src.type, m.group(), m.start(), m.end(), src.key))
+        return out
+
     def _inn_ok(self, ent) -> bool:
         """ИНН без подписи в строгом режиме не принимается (см. inn_needs_label)."""
         if not self.inn_needs_label or ent.type != "INN":
@@ -228,6 +276,10 @@ class Masker:
     ) -> tuple[str, dict]:
         mapping = copy.deepcopy(mapping) if mapping else {"version": 1, "labels": {}}
         labels: dict = mapping["labels"]
+
+        # Ищем по нормализованному тексту, отдаем исходный (см. _TYPO_TWINS).
+        source = text
+        text = normalize_for_analysis(text)
 
         candidates = [
             e for e in find_format_entities(text, self.org_names) if e.type in self.types
@@ -288,6 +340,10 @@ class Masker:
                            for e in self._repeats(
                                text, {e.text.strip() for e in dates}, candidates)]
 
+        # Организация в косвенном падеже - после всех остальных находок: она
+        # прирастает к уже признанному названию, а не ищется сама по себе.
+        candidates += self._org_case_repeats(text, candidates)
+
         # уже стоящие метки и спаны внутри них неприкосновенны (идемпотентность)
         occupied = [(m.start(), m.end()) for m in LABEL_RE.finditer(text)]
         accepted = self._resolve(candidates, occupied)
@@ -299,10 +355,10 @@ class Masker:
 
         out, pos = [], 0
         for start, end, placeholder in replacements:
-            out.append(text[pos:start])
+            out.append(source[pos:start])
             out.append(placeholder)
             pos = end
-        out.append(text[pos:])
+        out.append(source[pos:])
         return "".join(out), mapping
 
     @staticmethod

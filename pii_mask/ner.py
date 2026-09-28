@@ -206,7 +206,58 @@ class NatashaNer:
                 continue
             seen.add(key)
             out.append(ent)
+        out += self._surname_by_patronymic(text, out)
         return out
+
+    # Слово с большой буквы вплотную к спану: слева "Сухарева Алина", справа
+    # "Алина Сухарева". Перенос строки границей не считаем - ФИО не переносят.
+    _LEFT_WORD = re.compile(r"([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?)[ \t]+$")
+    _RIGHT_WORD = re.compile(r"^[ \t]+([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?)")
+
+    def _surname_by_patronymic(self, text: str, found: list[Entity]) -> list[Entity]:
+        """Дотянуть спан ФИО до соседней фамилии, когда в нем есть отчество.
+
+        NER регулярно отдает только "Имя Отчество", оставляя фамилию снаружи, и
+        документ выглядит обезличенным при названном человеке (резюме,
+        28.09.2026: в шапке осталась фамилия). Порядок слов тут не помогает -
+        фамилия стоит и слева, и справа, - зато помогает отчество: рядом с ним
+        слово с большой буквы фамилией и является.
+
+        Соседа берем только с согласия словаря: имя, фамилия или слово, которого
+        словарь не знает вовсе (экзотическая фамилия дороже лишней маски - тот
+        же размен, что в _plausible). Должность и город словарь знает обычными
+        словами, и они остаются на месте.
+        """
+        out = []
+        for ent in found:
+            if ent.type != "PERSON" or not self._has_patronymic(ent.text):
+                continue
+            left = self._LEFT_WORD.search(text[:ent.start])
+            if left and self._looks_like_surname(left.group(1)):
+                out.append(Entity("PERSON", text[left.start(1):ent.end],
+                                  left.start(1), ent.end,
+                                  text[left.start(1):ent.end].lower()))
+                continue
+            right = self._RIGHT_WORD.match(text[ent.end:])
+            if right and self._looks_like_surname(right.group(1)):
+                end = ent.end + right.end(1)
+                out.append(Entity("PERSON", text[ent.start:end],
+                                  ent.start, end, text[ent.start:end].lower()))
+        return out
+
+    def _has_patronymic(self, span: str) -> bool:
+        for word in re.findall(r"[А-ЯЁа-яё]+", span):
+            if any("Patr" in p.tag.grammemes for p in self._morph_vocab.parse(word)):
+                return True
+        return False
+
+    def _looks_like_surname(self, word: str) -> bool:
+        if word.lower() in STOP_TERMS:
+            return False
+        parses = self._morph_vocab.parse(word)
+        if any(g in _NAME_GRAMMEMES for p in parses for g in p.tag.grammemes):
+            return True
+        return not any(p.is_known for p in parses)
 
     def _name_words(self, text: str) -> list[Entity]:
         """Одинокое слово капсом, которое словарь знает как имя или фамилию.
