@@ -83,3 +83,32 @@ def test_org_in_oblique_case_is_masked_everywhere():
     masked, mapping = Masker(types=("ORG",)).mask(text)
     assert "Ромашке" not in masked, masked
     assert len(mapping["labels"]) == 1, "это одна организация, а не две"
+
+
+def test_object_name_in_quotes_after_generic_word():
+    """Родовое слово плюс кавычки - это название, даже без правовой формы.
+
+    В досье по опыту объекты названы так: ТРЦ "Ромашка", БЦ "Полевой". Правовой
+    формы рядом нет, NER такие названия не берет, и место работы остается в
+    тексте открытым. Само родовое слово не имя - его оставляем, иначе из
+    документа уходит масштаб объекта.
+    """
+    text = 'Масштаб: группа объектов - ТРЦ "Ромашка" 330 тыс. м², БЦ "Полевой" класса А'
+    masked, mapping = Masker(types=("ORG",), ner=False).mask(text)
+    assert "Ромашка" not in masked, masked
+    assert "Полевой" not in masked, masked
+    assert "ТРЦ" in masked and "БЦ" in masked, "тип объекта - не имя"
+    assert len(mapping["labels"]) == 2
+
+
+def test_org_declension_changes_the_ending():
+    """Косвенный падеж меняет окончание, а не прирастает к названию.
+
+    "Перспектива" в предложном - "Перспективе": буквальный повтор такое не
+    находит, и работодатель, замаскированный в шапке, остается назван в тексте.
+    """
+    text = ('ООО "Ромашка" - основное место работы.\n'
+            'Даты в Ромашке - по фактической работе, как решили 22.09.')
+    masked, mapping = Masker(types=("ORG",), ner=False).mask(text)
+    assert "Ромашке" not in masked, masked
+    assert len(mapping["labels"]) == 1, "это одна организация, а не две"

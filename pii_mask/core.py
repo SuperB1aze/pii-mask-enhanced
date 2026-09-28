@@ -39,6 +39,19 @@ _TYPO_TWINS = {"\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2212": "-",
 _TYPO_RE = re.compile("[" + "".join(_TYPO_TWINS) + "]")
 
 
+def _org_core(value: str) -> str:
+    """Ядро названия: без правовой формы и кавычек, одним словом.
+
+    Склоняется в тексте именно оно: 'ООО "Ромашка"' ниже по документу
+    встречается как "в Ромашке". Составные названия не берем - там меняется
+    окончание первого слова, а не последнего, и правило по основе на них врет.
+    """
+    from .recognizers import ORG_FORM_RE
+
+    core = ORG_FORM_RE.sub("", value).strip(" \t«»\"',.-")
+    return core if core and " " not in core else ""
+
+
 def normalize_for_analysis(text: str) -> str:
     """Свести типографские близнецы к простым символам, не меняя длину."""
     return _TYPO_RE.sub(lambda m: _TYPO_TWINS[m.group()], text)
@@ -242,8 +255,17 @@ class Masker:
         for src in known:
             if src.type != "ORG" or len(src.text.strip()) < 5:
                 continue
-            value = src.text.strip()
-            for m in re.finditer(re.escape(value) + r"[а-яё]{1,3}\b", text):
+            value = _org_core(src.text)
+            if not value:
+                continue
+            # Склонение меняет окончание, а не прирастает к названию:
+            # "Перспектива" в предложном - "Перспективе". Поэтому ищем по основе
+            # без последней буквы, если название кончается гласной или мягким
+            # знаком; иначе ("Гранат") основа и есть само название.
+            stem = value[:-1] if value[-1].lower() in "аеёиоуыэюяьй" else value
+            if len(stem) < 5:
+                continue
+            for m in re.finditer(re.escape(stem) + r"[а-яё]{0,3}\b", text):
                 if (m.start(), m.end()) in taken:
                     continue
                 if m.start() and text[m.start() - 1].isalnum():
