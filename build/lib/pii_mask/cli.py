@@ -162,6 +162,19 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_where() -> int:
+    """Путь импортированного модуля, а не путь бинаря.
+
+    Различие не формальное: бинарь может лежать где угодно, а код приходить из
+    рабочего дерева разработчика, из удаленного каталога или из боевой копии -
+    и снаружи эти случаи неразличимы.
+    """
+    import pii_mask
+
+    print(pii_mask.__file__)
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="pii-mask", description="Маскировка ПД перед облачной LLM")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -200,6 +213,9 @@ def main() -> None:
     p.add_argument("--mapping", required=True)
     p.add_argument("-o", "--output", help="дефолт stdout")
     p.set_defaults(func=cmd_unmask)
+
+    p = sub.add_parser("where", help="откуда работает код (путь импортированного модуля)")
+    p.set_defaults(func=lambda args: _cmd_where())
 
     p = sub.add_parser("serve", help="поднять HTTP API (микросервис)")
     p.add_argument("--host", default="127.0.0.1")

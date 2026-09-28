@@ -40,6 +40,8 @@ STOP_TERMS = frozenset({
     "laravel", "django", "react", "vue", "git", "gitlab", "github",
     "ollama", "claude", "claude api", "claude code", "openai api", "cursor",
     "langchain", "excel", "ms office", "figma", "notion", "trello", "asana",
+    "obsidian", "sqlite", "onnx", "codex", "qwen", "ktalk", "linkedin", "vk",
+    "google", "telegram", "whisper", "pert", "wbs", "субд", "cv", "pdf",
     # методологии и управленческие рамки
     "scrum", "kanban", "waterfall", "agile", "safe", "evm", "pmbok", "itil",
     "spec-driven development", "time & material", "fixed price",
@@ -245,6 +247,19 @@ class NatashaNer:
                                   ent.start, end, text[ent.start:end].lower()))
         return out
 
+    def known_common_word(self, word: str) -> bool:
+        """Словарь знает это слово обычным - не названием и не именем.
+
+        Нужно там, где цена ложной маски высока: "Россия" из "Ромашка
+        Россия" не должна закрывать слово "России" по всему документу, а
+        "Ромашка", которого словарь не знает вовсе, - должна.
+        """
+        parses = [p for p in self._morph_vocab.parse(word.capitalize()) if p.is_known]
+        if not parses:
+            return False
+        ok = _NAME_GRAMMEMES | {"Orgn"}
+        return not any(g in ok for p in parses for g in p.tag.grammemes)
+
     def _has_patronymic(self, span: str) -> bool:
         for word in re.findall(r"[А-ЯЁа-яё]+", span):
             if any("Patr" in p.tag.grammemes for p in self._morph_vocab.parse(word)):
@@ -277,7 +292,37 @@ class NatashaNer:
                 )
         return out
 
+    # Обрывок, а не название: NER склеивает соседние куски через служебные
+    # знаки ("PERT + WBS", "Ромашка/Василек НЕ", "АСИ**"). Название организации
+    # таких знаков внутри не содержит - кроме дефиса и амперсанда.
+    _JUNK_INSIDE = re.compile(r"[+*/\\|]|\*\*")
+
+    def _is_junk_span(self, ent: Entity) -> bool:
+        if self._JUNK_INSIDE.search(ent.text):
+            return True
+        # Слово (или все слова) капсом, которые словарь знает обычными словами:
+        # заголовки резюме - "РЕШЕНИЕ", "ОТКЛОНЕНА", "ПРОЕКТОВ". Незнакомое
+        # словарю слово капсом не трогаем - это может быть аббревиатура-название.
+        words = re.findall(r"[А-ЯЁ]{2,}", ent.text)
+        if words and words == re.findall(r"[А-ЯЁа-яёA-Za-z]+", ent.text):
+            known_common = []
+            for word in words:
+                parses = [p for p in self._morph_vocab.parse(word.capitalize())
+                          if p.is_known]
+                # Orgn - пометка словаря "название организации": так размечены
+                # Заречье, ГАЗПРОМ и прочие имена, давно вошедшие в словарь. Без
+                # этой оговорки чистка съедала настоящего работодателя.
+                ok = _NAME_GRAMMEMES | {"Orgn"}
+                known_common.append(bool(parses) and not any(
+                    g in ok for p in parses for g in p.tag.grammemes))
+            if all(known_common):
+                return True
+        return False
+
     def _plausible(self, ent: Entity) -> bool:
+        if self._is_junk_span(ent):
+            return False
+
         """Отсев заведомого мусора NER на верстке резюме и выгрузок.
 
         Три правила, от общего к частному:
