@@ -40,6 +40,9 @@ STOP_TERMS = frozenset({
     "laravel", "django", "react", "vue", "git", "gitlab", "github",
     "ollama", "claude", "claude api", "claude code", "openai api", "cursor",
     "langchain", "excel", "ms office", "figma", "notion", "trello", "asana",
+    # HR и обучение: термины ремесла, а не работодатели
+    "hrbp", "t&d", "talent review", "performance review", "performance",
+    "ispring", "power point", "powerpoint", "smart", "9-box", "ии", "ис",
     "obsidian", "sqlite", "onnx", "codex", "qwen", "ktalk", "linkedin", "vk",
     "google", "telegram", "whisper", "pert", "wbs", "субд", "cv", "pdf",
     # методологии и управленческие рамки
@@ -317,6 +320,15 @@ class NatashaNer:
     def _is_junk_span(self, ent: Entity) -> bool:
         if self._DUTY_HEAD.match(ent.text.strip()):
             return True
+        # Спан, начатый глаголом, - строка обязанностей ("Автоматизировал блок
+        # адаптации"), а не название. Проверяем морфологией, а не списком:
+        # глаголов в резюме столько же, сколько достижений.
+        first = re.match(r"[А-ЯЁA-Za-zа-яё]+", ent.text.strip())
+        if first:
+            parses = [p for p in self._morph_vocab.parse(first.group().lower())
+                      if p.is_known]
+            if parses and all(p.tag.POS in {"VERB", "INFN"} for p in parses):
+                return True
         if self._JUNK_INSIDE.search(ent.text):
             return True
         # Слово (или все слова) капсом, которые словарь знает обычными словами:
