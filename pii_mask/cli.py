@@ -16,6 +16,7 @@ import os
 import sys
 from pathlib import Path
 
+from . import presets
 from .core import DEFAULT_TYPES, Masker
 
 
@@ -72,7 +73,23 @@ def cmd_mask(args: argparse.Namespace) -> int:
                   file=sys.stderr)
             return 2
 
-    types = tuple(t.strip().upper() for t in args.types.split(",")) if args.types else DEFAULT_TYPES
+    preset = None
+    if getattr(args, "preset", None):
+        probe = (_probe_text(args.file, is_book, is_doc, is_pdf)
+                 if args.preset == presets.AUTO else None)
+        try:
+            preset, why = presets.resolve(args.preset, probe)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(why, file=sys.stderr)
+
+    if args.types:
+        types = tuple(t.strip().upper() for t in args.types.split(","))
+    elif preset is not None:
+        types = preset.types
+    else:
+        types = DEFAULT_TYPES
     org_names = ()
     if getattr(args, "org_dict", None):
         from .recognizers import load_org_dict
@@ -86,6 +103,14 @@ def cmd_mask(args: argparse.Namespace) -> int:
             line.strip() for line in Path(args.supported_names).read_text(
                 encoding='utf-8').splitlines() if line.strip())
     needs_form = getattr(args, "ner_org_needs_form", False)
+    person_needs_fio = getattr(args, "ner_person_needs_fio", False)
+    inn_needs_label = getattr(args, "inn_needs_label", False)
+    if preset is not None:
+        # Флаг поверх набора только добавляет строгость: снять ее - значит
+        # выбрать другой набор, и называть его надо именем, а не отрицанием.
+        needs_form = needs_form or preset.ner_org_needs_form
+        person_needs_fio = person_needs_fio or preset.ner_person_needs_fio
+        inn_needs_label = inn_needs_label or preset.inn_needs_label
     if needs_form and getattr(args, "auto_profile", False):
         # Требование правовой формы придумано для выгрузок 1С; на резюме оно
         # оставляет открытыми почти все места работы (3 организации против 62
@@ -106,9 +131,9 @@ def cmd_mask(args: argparse.Namespace) -> int:
     masker = Masker(types=types, ner=not args.no_ner, org_names=org_names,
                     ner_types=ner_types,
                     ner_org_needs_form=needs_form,
-                    ner_person_needs_fio=getattr(args, 'ner_person_needs_fio', False),
+                    ner_person_needs_fio=person_needs_fio,
                     supported_names=supported_names,
-                    inn_needs_label=getattr(args, 'inn_needs_label', False))
+                    inn_needs_label=inn_needs_label)
     mapping = _load_mapping(mapping_path)  # существующий mapping продолжаем
 
     if is_book or is_doc:
@@ -202,6 +227,17 @@ def _probe_text(path, is_book: bool, is_doc: bool, is_pdf: bool) -> str | None:
         return None
 
 
+def _cmd_presets() -> int:
+    for name in presets.names():
+        preset = presets.get(name)
+        print(f"{name} - {preset.title}")
+        print(f"  типы: {','.join(preset.types)}")
+        print(f"  организация только с правовой формой: "
+              f"{'да' if preset.ner_org_needs_form else 'нет'}")
+    print(f"{presets.AUTO} - выбрать набор по профилю документа")
+    return 0
+
+
 def _cmd_where() -> int:
     """Путь импортированного модуля, а не путь бинаря.
 
@@ -225,6 +261,10 @@ def main() -> None:
     p.add_argument("--mapping", help="файл mapping (дефолт <stem>.mapping.json; существующий продолжается)")
     p.add_argument("--audit", action="store_true", help="второй проход локальной LLM (Ollama)")
     p.add_argument("--no-ner", action="store_true", help="без Natasha NER (только форматные ПД)")
+    p.add_argument("--preset", choices=[*presets.names(), presets.AUTO],
+                   help="именованный набор типов и строгости: "
+                        + ", ".join(f"{n} - {presets.get(n).title}" for n in presets.names())
+                        + f"; {presets.AUTO} - выбрать по документу")
     p.add_argument("--types", help=f"типы через запятую (дефолт {','.join(DEFAULT_TYPES)})")
     p.add_argument("--inn-needs-label", dest="inn_needs_label", action="store_true",
                    help="маскировать ИНН только рядом со словом ИНН: голый номер "
@@ -257,6 +297,9 @@ def main() -> None:
     p.add_argument("--mapping", required=True)
     p.add_argument("-o", "--output", help="дефолт stdout")
     p.set_defaults(func=cmd_unmask)
+
+    p = sub.add_parser("presets", help="какие наборы типов знает сервис")
+    p.set_defaults(func=lambda args: _cmd_presets())
 
     p = sub.add_parser("where", help="откуда работает код (путь импортированного модуля)")
     p.set_defaults(func=lambda args: _cmd_where())
