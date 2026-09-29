@@ -348,7 +348,7 @@ class NatashaNer:
                 parses = [p for p in self._morph_vocab.parse(word.capitalize())
                           if p.is_known]
                 # Orgn - пометка словаря "название организации": так размечены
-                # Заречье, ГАЗПРОМ и прочие имена, давно вошедшие в словарь. Без
+                # названия, давно вошедшие в словарь. Без
                 # этой оговорки чистка съедала настоящего работодателя.
                 ok = _NAME_GRAMMEMES | {"Orgn"}
                 known_common.append(bool(parses) and not any(

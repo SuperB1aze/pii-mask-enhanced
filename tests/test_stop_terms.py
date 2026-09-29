@@ -25,7 +25,7 @@ TERMS = [
 ]
 
 # Названия работодателей, которые обязаны исчезнуть.
-EMPLOYERS = ["Заречье", "Заречье", "Nkuba", "Vasilek Group"]
+EMPLOYERS = ["Ромашка Групп", "Заречье Инвест", "Vasilek Group", "Нкуба Холдинг"]
 
 
 @pytest.mark.parametrize("term", TERMS)

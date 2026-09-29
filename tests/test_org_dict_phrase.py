@@ -84,7 +84,7 @@ class TestDictionaryBeatsGuesswork:
         start = text.index("Ромашка Россия")
         fake_person = Entity(
             "PERSON", "Ромашка Россия", start, start + len("Ромашка Россия"),
-            "спортмастер россия",
+            "ромашка россия",
         )
         out, mapping = Masker(org_names=("Ромашка Россия",), ner=False).mask(
             text, extra_entities=[fake_person]
