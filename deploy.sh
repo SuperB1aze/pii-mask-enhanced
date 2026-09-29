@@ -31,12 +31,19 @@ fi
 COMMIT="$(git rev-parse --short HEAD)"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
+# В бой едет КОММИТ, а не дерево. Прежняя редакция обещала это строкой выше, а
+# ставила из рабочего дерева - pip собирает пакет из файлов, а не из истории,
+# так что незакоммиченные правки уезжали в бой, и предупреждение врало.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+git archive HEAD | tar -x -C "$STAGE"
+
 echo "== установка в $PROD =="
 mkdir -p "$PROD"
 [ -x "$PROD/.venv/bin/python" ] || python3 -m venv "$PROD/.venv"
 # Не editable: в бой едет копия кода, а не ссылка на рабочее дерево - иначе
 # разделение существует только на бумаге.
-"$PROD/.venv/bin/pip" install --quiet --upgrade "$SRC"
+"$PROD/.venv/bin/pip" install --quiet --upgrade "$STAGE"
 
 printf '%s %s %s\n' "$COMMIT" "$BRANCH" "$(date +%Y-%m-%dT%H:%M)" > "$PROD/ВЕРСИЯ"
 mkdir -p "$(dirname "$LINK")"
