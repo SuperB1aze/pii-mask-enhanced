@@ -1,5 +1,10 @@
-# systemd user-unit для микросервиса pii-mask.
-# Ставится deploy.sh в ~/.config/systemd/user/ (нужен loginctl enable-linger).
+# systemd user-unit для микросервиса pii-mask - образец, НЕ установлен.
+#
+# Демона на этой машине нет (решение dwl 28.09.2026): сервисом пользуются
+# нечасто, а процесс, поднимаемый на каждый вызов CLI, протухнуть не может.
+# Юнит лежит тут на случай, если понадобится постоянный шлюз; deploy.sh его
+# не ставит. Понадобится - копировать в ~/.config/systemd/user/ и не забыть
+# loginctl enable-linger.
 #
 # Путь абсолютный и указывает на рабочее дерево репозитория, а не на копию в
 # домашнем каталоге. Прежняя редакция вела в %h/pii-mask - вторую копию, которую
@@ -13,8 +18,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/data/git/pii-mask
-ExecStart=/data/git/pii-mask/.venv/bin/pii-mask serve --host 127.0.0.1 --port 8377
+WorkingDirectory=/data/apps/pii-mask
+ExecStart=/data/apps/pii-mask/.venv/bin/pii-mask serve --host 127.0.0.1 --port 8377
 Restart=on-failure
 RestartSec=3
 # в stdout сервиса нет тел запросов (см. api.py) - journald безопасен
