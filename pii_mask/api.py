@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from .core import DEFAULT_TYPES, Masker
 
-app = FastAPI(title="pii-mask", docs_url=None, redoc_url=None)
+app = FastAPI(title="pii-mask-enhanced", docs_url=None, redoc_url=None)
 
 
 class MaskRequest(BaseModel):

@@ -1,24 +1,6 @@
-"""Маскировка документа Word (.docx) без внешних зависимостей.
-
-Устроен так же, как книга Excel: zip с XML внутри. Поэтому и подход тот же -
-точечная правка текстовых узлов, остальные части копируются байт в байт.
-Пересборка всего XML переставляет атрибуты и пространства имен, после чего Word
-может отказаться открывать файл.
-
-**Единица работы - абзац, а не текстовый узел.** Word рвет фразу на прогоны по
-форматированию и следам правки: "Соколова" запросто лежит двумя узлами - "Соко"
-и "лова". Маскировка по узлам не увидела бы ни одного имени, потому что
-распознавателю достался бы обрывок.
-
-**Оформление сохраняется везде, кроме абзацев, где была замена.** Абзац без ПД
-не переписывается вовсе. В измененном абзаце прогоны схлопываются в первый:
-раскидать замену обратно по кускам нельзя - метка не совпадает с исходным
-текстом ни длиной, ни границами. Это осознанный размен, и он дешевле, чем у
-PDF, где верстка ломается вся.
-
-**Незнакомая часть с текстом - отказ, а не пропуск** (как и в книгах): диаграмма
-или надпись, которую мы не разбираем, молча скопировалась бы вместе с ПД.
-"""
+'''
+Маскировка документа Word (.docx) без внешних зависимостей.
+'''
 from __future__ import annotations
 
 import re
@@ -27,19 +9,19 @@ from pathlib import Path
 
 from .xlsx import _escape, _strip_authors, _unescape
 
-# Абзац и текстовый узел. Префикс пространства имен у Word всегда есть ("w:"),
-# но делаем его необязательным - файлы из конвертеров бывают без него.
+# Теги абзаца (<w:p>) и текста (<w:t>). 
+# Префикс "w:" необязателен: сторонние конвертеры иногда пишут теги без него.
 _P_RE = re.compile(rb"<(?:\w+:)?p(?:\s[^>]*)?>(.*?)</(?:\w+:)?p>", re.S)
 _T_RE = re.compile(rb"<(?:\w+:)?t(?:\s[^>]*)?>(.*?)</(?:\w+:)?t>|<(?:\w+:)?t(?:\s[^>]*)?/>", re.S)
 _ANY_T_RE = re.compile(rb"<(?:\w+:)?t(?:\s[^>]*)?>([^<]+)</(?:\w+:)?t>", re.S)
 
-# Части с текстом, который читает человек: тело, колонтитулы, сноски, примечания.
+# тело, колонтитулы, сноски, примечания
 _TEXT_PARTS = re.compile(
     r"^word/(document\.xml|header\d*\.xml|footer\d*\.xml"
     r"|footnotes\.xml|endnotes\.xml|comments\.xml)$"
 )
 
-# Части без пользовательского текста: разметка, стили, связи, нумерация.
+# разметка, стили, связи, нумерация
 _NO_TEXT = re.compile(
     r"^(\[Content_Types\]\.xml|_rels/|word/_rels/|word/styles\.xml|word/theme/"
     r"|word/settings\.xml|word/fontTable\.xml|word/webSettings\.xml"
@@ -48,13 +30,13 @@ _NO_TEXT = re.compile(
 
 
 def _parts(z: zipfile.ZipFile) -> list[str]:
-    """Части с абзацами, в устойчивом порядке: тело первым, дальше по алфавиту."""
+    # части с абзацами: тело первым, дальше по алфавиту
     names = [n for n in z.namelist() if _TEXT_PARTS.match(n)]
     return sorted(names, key=lambda n: (n != "word/document.xml", n))
 
 
 def _unknown_text_parts(z: zipfile.ZipFile) -> list[str]:
-    """Части с текстом, которые мы не разбираем: диаграммы, надписи, чужое."""
+    # диаграммы, надписи, чужое
     known = set(_parts(z))
     bad = []
     for n in z.namelist():
@@ -71,7 +53,7 @@ def _para_value(body: bytes) -> str:
 
 
 def paragraph_texts(path: str | Path) -> list[str]:
-    """Текст документа по абзацам, в устойчивом порядке."""
+    # текст документа по абзацам, в устойчивом порядке."""
     values: list[str] = []
     with zipfile.ZipFile(path) as z:
         for name in _parts(z):
@@ -107,10 +89,10 @@ def _rewrite_part(blob: bytes, values: list[str], cursor: int) -> tuple[bytes, i
 
 
 def rewrite(src: str | Path, dst: str | Path, values: list[str]) -> None:
-    """Собрать копию документа с подставленными абзацами."""
+    # собрать копию документа с подставленными абзацами
     src, dst = Path(src), Path(dst)
     if dst.exists() and src.samefile(dst):
-        raise ValueError("нельзя писать поверх исходного документа - укажи другой файл")
+        raise ValueError("нельзя писать поверх исходного документа - укажите другой файл")
     have = paragraph_texts(src)
     if len(values) != len(have):
         raise ValueError(
@@ -131,14 +113,11 @@ def rewrite(src: str | Path, dst: str | Path, values: list[str]) -> None:
 
 
 def mask_document(src: str | Path, dst: str | Path, masker, mapping: dict | None = None) -> dict:
-    """Замаскировать документ: на входе .docx, на выходе .docx и реестр."""
+    # маскировка документа с выводом маппинга
     with zipfile.ZipFile(src) as z:
         unknown = _unknown_text_parts(z)
     if unknown:
-        raise ValueError(
-            "в документе есть текст, который я не умею обезличивать: "
-            + ", ".join(unknown)
-            + " - скопировать его как есть значит выпустить ПД наружу молча")
+        raise ValueError(f"В документе есть текст, с которым возникла проблема обезличивания: {unknown}, может произойти утечка ПД.")
 
     masked = []
     for value in paragraph_texts(src):

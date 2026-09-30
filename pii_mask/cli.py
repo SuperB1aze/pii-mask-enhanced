@@ -1,12 +1,9 @@
 """CLI: pii-mask mask|unmask|serve.
 
 Пайплайн транскриптов:
-    pii-mask mask встреча.md              -> встреча.masked.md + встреча.mapping.json
-    <masked уходит в облачную LLM, ответ сохраняется в answer.md>
-    pii-mask unmask answer.md --mapping встреча.mapping.json
-
-mapping-файл содержит оригиналы ПД: права 600, в git не коммитить (*.mapping.json
-в .gitignore), удалять вместе с задачей.
+    1. pii-mask mask встреча.md -> встреча.masked.md + встреча.mapping.json
+    masked уходит в облачную LLM, ответ сохраняется в answer.md
+    2. pii-mask unmask answer.md --mapping встреча.mapping.json
 """
 from __future__ import annotations
 
@@ -43,6 +40,8 @@ def _save_mapping(path: str, mapping: dict) -> None:
     p = Path(path)
     p.write_text(json.dumps(mapping, ensure_ascii=False, indent=1), encoding="utf-8")
     os.chmod(p, 0o600)
+    # mapping может содержать персональные данные, поэтому на Unix/Linux системах реализована выдача
+    # права 600 (только владелец может читать и писать файл)
 
 
 def cmd_mask(args: argparse.Namespace) -> int:
@@ -55,8 +54,7 @@ def cmd_mask(args: argparse.Namespace) -> int:
     is_pdf = src_path is not None and src_path.suffix.lower() == ".pdf"
     is_doc = src_path is not None and src_path.suffix.lower() == ".docx"
     stem = None if src_path is None else src_path.with_suffix("")
-    # Книга остается книгой: отдать .md вместо .xlsx значит вернуть таблицу,
-    # которую уже не открыть тем, чем ее прислали.
+
     suffix = (".masked.xlsx" if is_book else
               ".masked.docx" if is_doc else ".masked.md")
     out = args.output or (f"{stem}{suffix}" if stem else None)
@@ -106,8 +104,7 @@ def cmd_mask(args: argparse.Namespace) -> int:
     person_needs_fio = getattr(args, "ner_person_needs_fio", False)
     inn_needs_label = getattr(args, "inn_needs_label", False)
     if preset is not None:
-        # Флаг поверх набора только добавляет строгость: снять ее - значит
-        # выбрать другой набор, и называть его надо именем, а не отрицанием.
+        # флаг поверх набора добавляет строгость
         needs_form = needs_form or preset.ner_org_needs_form
         person_needs_fio = person_needs_fio or preset.ner_person_needs_fio
         inn_needs_label = inn_needs_label or preset.inn_needs_label
@@ -172,9 +169,7 @@ def cmd_mask(args: argparse.Namespace) -> int:
     n = len(mapping["labels"])
     print(f"замаскировано сущностей: {n}; mapping: {mapping_path}", file=sys.stderr)
 
-    # Сколько записей словаря реально сработало. Без этой строки запись, не давшая
-    # ни одного совпадения, ничем себя не выдает: словарь молчит одинаково и когда
-    # он подошел к документу, и когда его составили не под этот текст.
+    # Сколько записей словаря реально сработало. Без этой строки запись, не давшая ни одного совпадения, ничем себя не выдает.
     if org_names:
         used = {rec["key"] for rec in mapping["labels"].values() if rec["type"] == "ORG"}
         hit = [nm for nm in org_names if " ".join(nm.lower().split()) in used]
@@ -206,11 +201,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def _probe_text(path, is_book: bool, is_doc: bool, is_pdf: bool) -> str | None:
-    """Текст документа для определения профиля; None - прочитать не вышло.
+    # Текст документа для определения профиля; None - прочитать не вышло. Книга Excel вовсе не пробуется.
 
-    Книгу Excel не пробуем вовсе: резюме в виде таблицы с формулами не бывает,
-    а собирать ради этого весь лист - лишняя работа на каждом прогоне.
-    """
     try:
         if is_book:
             return None
@@ -239,12 +231,7 @@ def _cmd_presets() -> int:
 
 
 def _cmd_where() -> int:
-    """Путь импортированного модуля, а не путь бинаря.
-
-    Различие не формальное: бинарь может лежать где угодно, а код приходить из
-    рабочего дерева разработчика, из удаленного каталога или из боевой копии -
-    и снаружи эти случаи неразличимы.
-    """
+    # путь импортированного модуля
     import pii_mask
 
     print(pii_mask.__file__)
@@ -252,7 +239,7 @@ def _cmd_where() -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="pii-mask", description="Маскировка ПД перед облачной LLM")
+    parser = argparse.ArgumentParser(prog="pii-mask-enhanced", description="Маскировка ПД перед облачной LLM")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("mask", help="замаскировать файл или stdin (-)")
