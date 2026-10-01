@@ -51,6 +51,8 @@ def cmd_mask(args: argparse.Namespace) -> int:
         return 2
 
     src_path = None if args.file == "-" else Path(args.file)
+    if src_path is not None and src_path.suffix.lower() == ".doc":
+        return _mask_legacy_doc(args, src_path)
     is_book = src_path is not None and src_path.suffix.lower() == ".xlsx"
     is_pdf = src_path is not None and src_path.suffix.lower() == ".pdf"
     is_doc = src_path is not None and src_path.suffix.lower() == ".docx"
@@ -110,11 +112,7 @@ def cmd_mask(args: argparse.Namespace) -> int:
         person_needs_fio = person_needs_fio or preset.ner_person_needs_fio
         inn_needs_label = inn_needs_label or preset.inn_needs_label
     if needs_form and getattr(args, "auto_profile", False):
-        # Требование правовой формы придумано для выгрузок 1С; на резюме оно
-        # оставляет открытыми почти все места работы (3 организации против 62
-        # на живом файле). Поэтому для резюме его снимаем - но говорим об этом
-        # в stderr: молчаливая смена режима означала бы, что два прогона одного
-        # файла необъяснимо дают разный результат.
+        # для 1С
         from ..detection import profile
 
         probe = _probe_text(args.file, is_book, is_doc, is_pdf)
@@ -180,6 +178,29 @@ def cmd_mask(args: argparse.Namespace) -> int:
             shown = ", ".join(idle[:5]) + (f" и еще {len(idle) - 5}" if len(idle) > 5 else "")
             print(f"  не встретились в тексте: {shown}", file=sys.stderr)
     return 0
+
+
+def _mask_legacy_doc(args: argparse.Namespace, src_path: Path) -> int:
+    # .doc переводится во временный .docx и маскируется как .docx. Имена
+    # результата и реестра считаем от исходного файла.
+    from ..formats.doc import DocError, as_docx
+
+    stem = src_path.with_suffix("")
+    out = args.output or f"{stem}.masked.docx"
+    mapping_path = args.mapping or f"{stem}.mapping.json"
+    for a, what in ((out, "результат"), (mapping_path, "реестр")):
+        if a != "-" and Path(a) == src_path:
+            print(f"{what} и исходный файл - один и тот же путь ({a}); один затрёт другой",
+                  file=sys.stderr)
+            return 2
+    try:
+        with as_docx(src_path) as converted:
+            inner = argparse.Namespace(**{**vars(args), "file": str(converted),
+                                          "output": out, "mapping": mapping_path})
+            return cmd_mask(inner)
+    except DocError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
 
 def cmd_unmask(args: argparse.Namespace) -> int:

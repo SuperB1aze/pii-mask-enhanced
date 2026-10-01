@@ -13,6 +13,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# конвертация .doc через MS Word, если нет LibreOffice (только Windows)
+word = ["pywin32>=306; sys_platform == 'win32'"]
 
 [project.scripts]
 pii-mask = "pii_mask_enhanced.interfaces.cli:main"
