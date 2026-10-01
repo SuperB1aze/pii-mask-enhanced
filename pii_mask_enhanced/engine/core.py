@@ -50,7 +50,6 @@ DEFAULT_TYPES = (
     "PERSON", "ORG", "PHONE", "EMAIL", "CARD", "INN", "OGRN", "UID", "REQ",
     "SNILS", "PASSPORT", "TG", "URL", "ADDRESS",
 )
-# LOC (города/страны) не маскируем по умолчанию. Включается через types.
 
 _PRIORITY = {
     "EMAIL": 1, "TG": 2, "CARD": 3, "SNILS": 4, "PHONE": 5,
