@@ -42,17 +42,19 @@
 Python 3.10+:
 
 ```bash
-git clone <repo-url> && cd pii-mask
-python3 -m venv venv
+git clone https://github.com/SuperB1aze/pii-mask-enhanced.git
+cd pii-mask-enhanced
 ```
 Windows:
 ```bash
+python -m venv venv
 venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 ```
 
 Linux:
 ```bash
+python3 -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"
 ```
