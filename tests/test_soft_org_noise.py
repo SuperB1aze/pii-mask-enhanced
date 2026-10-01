@@ -8,7 +8,7 @@
 Маска вместо термина не утечка, но документ становится нечитаем ни человеком,
 ни моделью - ровно то, ради чего строгий режим и вводили.
 """
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 
 def mask(text, **kw):

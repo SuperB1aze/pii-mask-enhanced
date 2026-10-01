@@ -9,7 +9,7 @@
 Отсюда режим: NER работает, но его находки принимаются только по названным
 типам.
 """
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 
 def _mask(text: str, **kw) -> str:

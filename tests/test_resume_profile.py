@@ -8,7 +8,7 @@
 
 Отсюда профиль по документу, а не один режим на все.
 """
-from pii_mask.profile import looks_like_resume
+from pii_mask_enhanced.detection.profile import looks_like_resume
 
 РЕЗЮМЕ = """Иванов Иван
 Руководитель проектного офиса

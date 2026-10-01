@@ -12,7 +12,7 @@
 """
 import pytest
 
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 # Термины, которые обязаны пережить маскировку дословно.
 TERMS = [

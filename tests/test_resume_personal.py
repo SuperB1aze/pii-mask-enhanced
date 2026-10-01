@@ -5,7 +5,7 @@ hh-резюме начинается строкой "Женщина, 29 лет, 
 связка "город плюс узкая должность" сужает человека до единиц; при этом адрес
 в других документах мы маскируем, а эти два поля проходили мимо.
 """
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 
 def mask(text, **kw):

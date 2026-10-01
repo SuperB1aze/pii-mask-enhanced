@@ -9,7 +9,7 @@
 Отсюда два требования, и второе не менее важно первого: искать по
 нормализованному тексту, а отдавать символы клиента как были.
 """
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 
 def test_non_breaking_hyphen_does_not_split_a_name():

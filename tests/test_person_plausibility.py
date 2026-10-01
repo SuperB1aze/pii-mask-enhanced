@@ -4,7 +4,7 @@
 как людей связки "товар плюс бренд" - "ГИДРОПЛЕКС Тушь", "Крем АКВАЛЮКС".
 Однословный фильтр их не видел, потому что слов два.
 """
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 
 def _persons(text: str) -> list[str]:

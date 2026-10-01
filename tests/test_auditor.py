@@ -5,7 +5,7 @@
 """
 import json
 
-import pii_mask.auditor as auditor
+import pii_mask_enhanced.detection.auditor as auditor
 
 
 class _FakeResponse:

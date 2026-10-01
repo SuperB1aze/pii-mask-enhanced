@@ -15,11 +15,11 @@ dependencies = [
 dev = ["pytest>=8"]
 
 [project.scripts]
-pii-mask = "pii_mask.cli:main"
+pii-mask = "pii_mask_enhanced.interfaces.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["pii_mask"]
+[tool.setuptools.packages.find]
+include = ["pii_mask_enhanced*"]

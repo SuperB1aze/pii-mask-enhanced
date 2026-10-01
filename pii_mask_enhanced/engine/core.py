@@ -15,7 +15,7 @@ from __future__ import annotations
 import copy
 import re
 
-from .recognizers import DATE_AFTER_RE, Entity, digits, find_format_entities
+from ..detection.recognizers import DATE_AFTER_RE, Entity, digits, find_format_entities
 
 LABEL_RE = re.compile(r"\{\{([A-Z]+)_(\d+)\}\}")
 PHONE_SCAN_RE = re.compile(r"\+?[78][\d \-()]{9,18}\d")
@@ -36,7 +36,7 @@ _TYPO_RE = re.compile("[" + "".join(_TYPO_TWINS) + "]")
 def _org_core(value: str) -> str:
     # Ядро названия организации без правовой формы и без склонения. Составные названия не берем.
 
-    from .recognizers import ORG_FORM_RE
+    from ..detection.recognizers import ORG_FORM_RE
 
     core = ORG_FORM_RE.sub("", value).strip(" \t«»\"',.-")
     return core if core and " " not in core else ""
@@ -102,11 +102,11 @@ class Masker:
     def _ner_org_ok(self, ent) -> bool:
         # Организация от NER: с правовой формой или без разницы. Правило касается ТОЛЬКО организаций и только тех, что предложил NER.
         if ent.type == "ORG" and self.ner_org_needs_form:
-            from .recognizers import ORG_FORM_RE
+            from ..detection.recognizers import ORG_FORM_RE
 
             return bool(ORG_FORM_RE.search(ent.text))
         if ent.type == "PERSON" and self.ner_person_needs_fio:
-            from .ner import NatashaNer
+            from ..detection.ner import NatashaNer
 
             if self._supported(ent):
                 return True
@@ -121,7 +121,7 @@ class Masker:
         """
         if "PERSON" not in self.types:
             return []
-        from .ner import _is_stop_term
+        from ..detection.ner import _is_stop_term
 
         taken = {(e.start, e.end) for e in known}
         tokens = set()
@@ -217,7 +217,7 @@ class Masker:
 
         if not self._use_ner:
             return candidates
-        from .ner import NatashaNer
+        from ..detection.ner import NatashaNer
 
         ner = NatashaNer.shared()
         out = []
@@ -231,7 +231,7 @@ class Masker:
 
     def _org_token_repeats(self, text: str, known: list) -> list:
         # Слова подтвержденных названий, оставшиеся открытыми в других местах
-        from .ner import STOP_TERMS, NatashaNer
+        from ..detection.ner import STOP_TERMS, NatashaNer
 
         if not self._use_ner:
             # без NER подтвержденные названия приходят из словаря и по правовой форме
@@ -322,7 +322,7 @@ class Masker:
             e for e in find_format_entities(text, self.org_names) if e.type in self.types
         ]
         if self._use_ner:
-            from .ner import NatashaNer
+            from ..detection.ner import NatashaNer
 
             allowed = self.types if self.ner_types is None else self.types & self.ner_types
             candidates += [e for e in NatashaNer.shared().extract(text)
@@ -442,7 +442,7 @@ class Masker:
 
     @staticmethod
     def _is_own_artifact(s: str) -> bool:
-        from .recognizers import FAKE_EMAIL_RE
+        from ..detection.recognizers import FAKE_EMAIL_RE
 
         s = s.strip()
         if LABEL_RE.search(s):
@@ -464,7 +464,7 @@ class Masker:
 
     def mask_with_audit(self, text: str, mapping: dict | None = None) -> tuple[str, dict]:
         # mask + второй проход локальной LLM по уже замаскированному тексту.
-        from .auditor import audit, ollama_alive
+        from ..detection.auditor import audit, ollama_alive
 
         if not ollama_alive():
             raise RuntimeError(

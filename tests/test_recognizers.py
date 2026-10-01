@@ -1,7 +1,7 @@
 """Regex-распознаватели: форматные ПД РФ. Валидаторы контрольных сумм обязаны отсекать мусор."""
 import pytest
 
-from pii_mask.recognizers import find_format_entities
+from pii_mask_enhanced.detection.recognizers import find_format_entities
 
 
 def types_of(text, wanted=None):
@@ -286,7 +286,7 @@ def test_requisite_with_keyword_ignores_checksum():
 
 
 def test_requisite_keeps_keyword_visible():
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
     masked, _ = Masker(types=("INN",), ner=False).mask("реквизиты: ИНН 783199667")
     assert masked == "реквизиты: ИНН {{INN_1}}"
 

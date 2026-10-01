@@ -7,7 +7,7 @@ import zipfile
 
 import pytest
 
-from pii_mask import xlsx
+from pii_mask_enhanced.formats import xlsx
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -99,7 +99,7 @@ def test_special_chars_survive_roundtrip(tmp_path):
 
 def test_mask_workbook_masks_org_keeps_numbers(tmp_path):
     """Сквозной путь: книга на входе - книга на выходе, реестр общий на всю книгу."""
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     src = _book(tmp_path, shared=["ООО «Ромашка»", "Содержание операции", "ООО «Ромашка»"],
                 numbers=["1000"])
@@ -115,7 +115,7 @@ def test_mask_workbook_masks_org_keeps_numbers(tmp_path):
 
 def test_multiline_cell_survives(tmp_path):
     """Alt+Enter в ячейке - обычное дело; склейка через \\n не должна разъезжаться."""
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     src = _book(tmp_path, shared=["ООО «Ромашка»\nвторая строка", "Итого"])
     dst = tmp_path / "out.xlsx"
@@ -175,7 +175,7 @@ def test_entity_swallowing_newline_does_not_break_book(tmp_path):
     Схема "склеить всё и разрезать обратно" на этом ломалась. Поячеечная
     маскировка к длине строк не привязана.
     """
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     src = _book(tmp_path, shared=["ООО «СТРОЙМОНТАЖНАЛАДКА\nСТРОЙ»", "Итого"])
     dst = tmp_path / "out.xlsx"
@@ -213,7 +213,7 @@ def test_unknown_text_part_refuses_instead_of_leaking(tmp_path):
 
     Тихо скопировать часть с текстом = выпустить ПД наружу без единой ошибки.
     """
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     path = tmp_path / "draw.xlsx"
     drawing = ('<?xml version="1.0"?><xdr:wsDr xmlns:xdr="x" xmlns:a="y">'
@@ -229,7 +229,7 @@ def test_unknown_text_part_refuses_instead_of_leaking(tmp_path):
 
 def test_comment_text_and_author_are_masked(tmp_path):
     """Комментарий к ячейке и его автор - такой же канал утечки, как ячейка."""
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     path = tmp_path / "c.xlsx"
     comments = ('<?xml version="1.0"?><comments><authors><author>Петров Иван</author>'
@@ -249,7 +249,7 @@ def test_comment_text_and_author_are_masked(tmp_path):
 
 def test_document_author_is_cleared(tmp_path):
     """В свойствах файла лежит имя того, кто его сохранил."""
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     path = tmp_path / "p.xlsx"
     core = ('<?xml version="1.0"?><cp:coreProperties xmlns:cp="c" xmlns:dc="d">'
@@ -286,7 +286,7 @@ def test_workbook_supplies_supported_names(tmp_path):
     "ИП Метелина {{PERSON_1}}". Марка товара поддержки не получает - правовой
     формы рядом с ней нет нигде.
     """
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     src = _book(tmp_path, shared=["ИП Метелина Лилия Вячеславовна",
                                   "Постфильтр минерализатор Аквабрис",
@@ -333,7 +333,7 @@ def test_number_next_to_label_is_trusted(tmp_path):
 
 
 def test_strict_inn_masks_labelled_neighbour(tmp_path):
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     path = tmp_path / "req2.xlsx"
     sst = ('<?xml version="1.0"?><sst><si><t>ИНН</t></si><si><t>6083778353</t></si>'

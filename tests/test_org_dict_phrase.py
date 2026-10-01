@@ -13,7 +13,7 @@
   на пересечении выигрывал NER: "Ромашка Россия" уходила как {{PERSON_1}},
   потому что PERSON приоритетнее ORG по типу, а источник не учитывался.
 """
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 
 def _mask(text: str, names: tuple[str, ...]) -> tuple[str, dict]:
@@ -78,7 +78,7 @@ class TestDictionaryBeatsGuesswork:
         Проверяем не через NER (он требует моделей и медленный), а напрямую: спан
         того же участка, объявленный персоной, не должен вытеснять словарное ORG.
         """
-        from pii_mask.recognizers import Entity
+        from pii_mask_enhanced.detection.recognizers import Entity
 
         text = "Коллега Ромашка Россия отвечал за логистику."
         start = text.index("Ромашка Россия")

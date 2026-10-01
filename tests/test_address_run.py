@@ -6,7 +6,7 @@
 город латиницей, "тер." вместо "ул.", дом без "д.") - гонка без конца, а
 признак "после индекса идет адрес" держится на любой из них.
 """
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 
 def _mask(text: str) -> str:

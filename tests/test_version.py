@@ -10,11 +10,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pii_mask
+import pii_mask_enhanced
 
 
-def test_where_prints_the_imported_module_path():
-    out = subprocess.run([sys.executable, "-m", "pii_mask.cli", "where"],
-                         capture_output=True, text=True, cwd="/tmp")
+def test_where_prints_the_imported_module_path(tmp_path):
+    out = subprocess.run([sys.executable, "-m", "pii_mask_enhanced.interfaces.cli", "where"],
+                         capture_output=True, text=True, cwd=tmp_path)
     assert out.returncode == 0, out.stderr
-    assert str(Path(pii_mask.__file__).parent) in out.stdout, out.stdout
+    assert str(Path(pii_mask_enhanced.__file__).parent) in out.stdout, out.stdout

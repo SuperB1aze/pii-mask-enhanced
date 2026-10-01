@@ -10,8 +10,8 @@
 со строчной буквы. Составные названия пишутся через дефис без пробелов ("Ромашка-Банк"),
 части настоящего названия - с прописной ("Технопарк - Заречье").
 """
-from pii_mask.core import Masker
-from pii_mask.ner import _role_tail_len
+from pii_mask_enhanced.engine.core import Masker
+from pii_mask_enhanced.detection.ner import _role_tail_len
 
 
 def _mask(text: str, **kw) -> tuple[str, dict]:

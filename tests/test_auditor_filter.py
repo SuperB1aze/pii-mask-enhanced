@@ -7,7 +7,7 @@
 
 Сеть не нужна: проверяется только предикат отбора, не поход в Ollama.
 """
-from pii_mask.auditor import _plausible_candidate as ok
+from pii_mask_enhanced.detection.auditor import _plausible_candidate as ok
 
 
 class TestJobTitles:

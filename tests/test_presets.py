@@ -13,7 +13,7 @@ import sys
 
 import pytest
 
-from pii_mask import presets
+from pii_mask_enhanced.detection import presets
 
 РЕЗЮМЕ = """Сухарев Пётр
 Ведущий инженер
@@ -78,7 +78,7 @@ def test_resolve_explains_the_choice():
 # --- CLI -------------------------------------------------------------------
 
 def run(args, cwd):
-    return subprocess.run([sys.executable, "-m", "pii_mask.cli", *args],
+    return subprocess.run([sys.executable, "-m", "pii_mask_enhanced.interfaces.cli", *args],
                           capture_output=True, text=True, cwd=cwd)
 
 

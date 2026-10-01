@@ -4,7 +4,7 @@
 куски артикулов ("OZN7701234567" -> "OZN{{INN_1}}") и марки товаров как люди
 ("Аквабрис", "Ривалон", "Экотерм").
 """
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 VALID_INN = "6083778353"       # проходит контрольную сумму
 
@@ -82,7 +82,7 @@ def test_supported_name_accepted_without_name_grammemes():
     знает марку "Аквабрис", и отличает их только сам документ - тем, что назвал
     фамилию рядом с правовой формой.
     """
-    from pii_mask.recognizers import Entity
+    from pii_mask_enhanced.detection.recognizers import Entity
 
     ent = Entity("PERSON", "Метелина", 0, 8, "метелина")
     strict = Masker(types=("PERSON",), ner_person_needs_fio=True)

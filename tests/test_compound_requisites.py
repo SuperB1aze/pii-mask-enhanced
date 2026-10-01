@@ -4,7 +4,7 @@
 работала, а составная - нет, и ИНН уходил в обезличенный документ открытым.
 Формы пишут парой, потому что КПП без ИНН не имеет смысла.
 """
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 INN = "6083778353"
 KPP = "770101001"

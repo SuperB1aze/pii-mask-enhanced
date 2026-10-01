@@ -6,7 +6,7 @@
 """
 import pytest
 
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 NAME = "Смирнова Анна Валерьевна"
 
@@ -67,6 +67,6 @@ def test_offsets_stay_aligned_in_mixed_document():
 def test_caps_name_without_patronymic():
     """Регулярка держится на отчестве; пара слов капсом без него - работа NER
     по нормализованному регистру."""
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
     masked, _ = Masker().mask("в выборке ВЕРШКОВА ГАЛИНА указана дважды")
     assert "ВЕРШКОВА" not in masked and "РАИСА" not in masked

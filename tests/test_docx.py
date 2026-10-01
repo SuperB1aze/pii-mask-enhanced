@@ -8,7 +8,7 @@ import zipfile
 
 import pytest
 
-from pii_mask import docx
+from pii_mask_enhanced.formats import docx
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -55,7 +55,7 @@ def test_reads_paragraph_as_whole(tmp_path):
 
 def test_masks_name_split_across_runs(tmp_path):
     """Главный случай: имя разорвано форматированием."""
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     src = _docx(tmp_path / "b.docx", [_para(["Директор Соко", "лова Анна Владимировна"])])
     dst = tmp_path / "out.docx"
@@ -68,7 +68,7 @@ def test_masks_name_split_across_runs(tmp_path):
 
 def test_unchanged_paragraph_keeps_its_runs(tmp_path):
     """Абзац без ПД не переписываем - оформление внутри него цело."""
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     src = _docx(tmp_path / "c.docx",
                 [_para(["Итого по ", "накладной"], bold_first=True),
@@ -81,7 +81,7 @@ def test_unchanged_paragraph_keeps_its_runs(tmp_path):
 
 
 def test_document_stays_a_valid_package(tmp_path):
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     src = _docx(tmp_path / "d.docx", [_para(["Соколова Анна Владимировна"])])
     dst = tmp_path / "out.docx"
@@ -94,7 +94,7 @@ def test_document_stays_a_valid_package(tmp_path):
 
 def test_header_and_footer_are_masked(tmp_path):
     """Реквизиты в бланке живут в колонтитуле, а не в теле документа."""
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     header = (f'<?xml version="1.0"?><w:hdr {NS}>'
               f'{_para(["ООО «Ромашка»"])}</w:hdr>')
@@ -108,7 +108,7 @@ def test_header_and_footer_are_masked(tmp_path):
 
 def test_unknown_text_part_refuses(tmp_path):
     """Надпись или диаграмма, которую мы не разбираем, - отказ, а не пропуск."""
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     drawing = ('<?xml version="1.0"?><wp:chart xmlns:wp="x" xmlns:a="y">'
                '<a:t>ООО «Ромашка»</a:t></wp:chart>')
@@ -119,7 +119,7 @@ def test_unknown_text_part_refuses(tmp_path):
 
 
 def test_author_is_cleared(tmp_path):
-    from pii_mask.core import Masker
+    from pii_mask_enhanced.engine.core import Masker
 
     core = ('<?xml version="1.0"?><cp:coreProperties xmlns:cp="c" xmlns:dc="d">'
             '<dc:creator>Соколов Иван</dc:creator></cp:coreProperties>')

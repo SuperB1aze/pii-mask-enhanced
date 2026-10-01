@@ -8,7 +8,7 @@
 """
 import pytest
 
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 # Бланк счета: колонки разделены широкой отбивкой, адрес разорван переводом
 # строки, а дата основания уехала на следующую строку внутри табличной ячейки.

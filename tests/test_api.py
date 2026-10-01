@@ -1,7 +1,7 @@
 """HTTP-фасад: roundtrip через API, health, защита от недоступного аудитора."""
 from fastapi.testclient import TestClient
 
-from pii_mask.api import app
+from pii_mask_enhanced.interfaces.api import app
 
 client = TestClient(app)
 
@@ -28,7 +28,7 @@ def test_mask_unmask_roundtrip():
 
 def test_audit_fail_closed(monkeypatch):
     # Ollama лежит + запрошен audit -> 503, а не тихая маскировка без аудита
-    import pii_mask.auditor as auditor
+    import pii_mask_enhanced.detection.auditor as auditor
 
     monkeypatch.setattr(auditor, "ollama_alive", lambda *a, **k: False)
     r = client.post("/mask", json={"text": "Иван Петров", "audit": True})

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 GOLDEN = Path(__file__).parent / "golden"
 

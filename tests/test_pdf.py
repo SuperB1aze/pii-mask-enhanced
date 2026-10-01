@@ -10,7 +10,7 @@ import shutil
 
 import pytest
 
-from pii_mask.pdf import PdfError, extract_text
+from pii_mask_enhanced.formats.pdf import PdfError, extract_text
 
 
 def _pdf(path, text: str | None):
@@ -71,7 +71,7 @@ def test_broken_file_is_an_error(tmp_path):
 
 
 def test_missing_binary_is_named(tmp_path, monkeypatch):
-    monkeypatch.setattr("pii_mask.pdf.shutil.which", lambda _: None)
+    monkeypatch.setattr("pii_mask_enhanced.formats.pdf.shutil.which", lambda _: None)
     with pytest.raises(PdfError, match="poppler"):
         extract_text(tmp_path / "any.pdf")
 
@@ -81,7 +81,7 @@ def test_cli_masks_pdf_into_markdown(tmp_path):
     """Сквозной путь: .pdf на входе, .masked.md и реестр на выходе."""
     import sys
 
-    from pii_mask.cli import main
+    from pii_mask_enhanced.interfaces.cli import main
 
     src = _pdf(tmp_path / "doc.pdf", 'OOO "Romashka", INN 6083778353')
     out = tmp_path / "doc.masked.md"

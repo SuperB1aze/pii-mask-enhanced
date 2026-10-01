@@ -53,7 +53,7 @@ def _para_value(body: bytes) -> str:
 
 
 def paragraph_texts(path: str | Path) -> list[str]:
-    # текст документа по абзацам, в устойчивом порядке."""
+    # текст документа по абзацам, в устойчивом порядке
     values: list[str] = []
     with zipfile.ZipFile(path) as z:
         for name in _parts(z):

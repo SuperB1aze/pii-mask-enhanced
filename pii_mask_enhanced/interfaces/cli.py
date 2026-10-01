@@ -13,8 +13,9 @@ import os
 import sys
 from pathlib import Path
 
-from . import presets
-from .core import DEFAULT_TYPES, Masker
+from ..detection import presets
+from ..engine.core import DEFAULT_TYPES, Masker
+from ..formats import xlsx
 
 
 def _read(src: str) -> str:
@@ -90,7 +91,7 @@ def cmd_mask(args: argparse.Namespace) -> int:
         types = DEFAULT_TYPES
     org_names = ()
     if getattr(args, "org_dict", None):
-        from .recognizers import load_org_dict
+        from ..detection.recognizers import load_org_dict
 
         org_names = load_org_dict(args.org_dict)
     ner_types = (tuple(x.strip().upper() for x in args.ner_types.split(","))
@@ -114,7 +115,7 @@ def cmd_mask(args: argparse.Namespace) -> int:
         # на живом файле). Поэтому для резюме его снимаем - но говорим об этом
         # в stderr: молчаливая смена режима означала бы, что два прогона одного
         # файла необъяснимо дают разный результат.
-        from . import profile
+        from ..detection import profile
 
         probe = _probe_text(args.file, is_book, is_doc, is_pdf)
         if probe is None:
@@ -134,7 +135,7 @@ def cmd_mask(args: argparse.Namespace) -> int:
     mapping = _load_mapping(mapping_path)  # существующий mapping продолжаем
 
     if is_book or is_doc:
-        from . import docx, xlsx
+        from ..formats import docx
 
         what = "книг" if is_book else "документов Word"
         if args.audit:
@@ -150,8 +151,8 @@ def cmd_mask(args: argparse.Namespace) -> int:
     else:
         if is_pdf:
             # PDF читаем текстом и текстом же отдаем: собрать PDF обратно нельзя,
-            # замена другой длины ломает верстку строки (см. pii_mask/pdf.py).
-            from .pdf import PdfError, extract_text
+            # замена другой длины ломает верстку строки (см. pii_mask_enhanced/formats/pdf.py).
+            from ..formats.pdf import PdfError, extract_text
 
             try:
                 text = extract_text(args.file)
@@ -207,11 +208,11 @@ def _probe_text(path, is_book: bool, is_doc: bool, is_pdf: bool) -> str | None:
         if is_book:
             return None
         if is_doc:
-            from .docx import paragraph_texts
+            from ..formats.docx import paragraph_texts
 
             return "\n".join(paragraph_texts(path))
         if is_pdf:
-            from .pdf import extract_text
+            from ..formats.pdf import extract_text
 
             return extract_text(path)
         return _read(path)
@@ -232,9 +233,9 @@ def _cmd_presets() -> int:
 
 def _cmd_where() -> int:
     # путь импортированного модуля
-    import pii_mask
+    import pii_mask_enhanced
 
-    print(pii_mask.__file__)
+    print(pii_mask_enhanced.__file__)
     return 0
 
 
@@ -300,5 +301,5 @@ def main() -> None:
     sys.exit(args.func(args))
 
 
-if __name__ == "__main__":  # python -m pii_mask.cli
+if __name__ == "__main__":  # python -m pii_mask_enhanced.interfaces.cli
     main()

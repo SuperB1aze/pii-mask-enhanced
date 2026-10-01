@@ -6,7 +6,7 @@
 
 Номера в тестах выдуманные: репозиторий публичный.
 """
-from pii_mask.core import Masker
+from pii_mask_enhanced.engine.core import Masker
 
 
 def _mask(text: str, types=("CERT",)) -> str:
