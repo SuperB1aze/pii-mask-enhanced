@@ -18,13 +18,15 @@ def extract_text(src: str | Path, timeout: int = 120) -> str:
         raise PdfError(
             f"нет {BIN} - установите poppler-utils, без него PDF читать нечем")
 
-    proc = subprocess.run([BIN, "-layout", str(src), "-"],
+    # -enc UTF-8 прописывается явно: xpdf по умолчанию пишет кодировку Latin-1 и теряет кириллицу
+    proc = subprocess.run([BIN, "-enc", "UTF-8", "-layout", str(src), "-"],
                           capture_output=True, timeout=timeout)
     if proc.returncode != 0:
         detail = proc.stderr.decode("utf-8", "replace").strip().splitlines()
         raise PdfError(f"{BIN} не смог прочитать файл: {detail[-1] if detail else 'без деталей'}")
 
-    text = proc.stdout.decode("utf-8", "replace")
+    # на Windows pdftotext пишет \r\n, а \r в тексте мешает распознаванию ФИО
+    text = proc.stdout.decode("utf-8", "replace").replace("\r\n", "\n")
     if not text.replace("\f", "").strip():
         raise PdfError(
             "В PDF нет текстового слоя. Похоже, что это скан. Маскировка PDF без текста невозможна.")
