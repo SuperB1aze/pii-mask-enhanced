@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from typing import TYPE_CHECKING, cast
 
 from ..recognizers.recognizers import Entity
@@ -9,6 +10,9 @@ from . import helpers
 
 if TYPE_CHECKING:
     from natasha.morph.vocab import MorphForm
+
+# pymorphy2 (зависимость natasha) импортирует pkg_resources, setuptools<81 об этом предупреждает
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated", category=UserWarning)
 
 
 def _role_tail_len(text: str) -> int:

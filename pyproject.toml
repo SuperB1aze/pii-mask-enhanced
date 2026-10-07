@@ -25,3 +25,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["pii_mask_enhanced*"]
+
+[tool.pytest.ini_options]
+# предупреждение от pymorphy2, что глушится в ner.py
+filterwarnings = ["ignore:pkg_resources is deprecated:UserWarning"]

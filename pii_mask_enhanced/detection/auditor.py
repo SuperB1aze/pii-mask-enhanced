@@ -13,10 +13,14 @@ import json
 import logging
 import os
 import re
+import warnings
 
 import httpx
 
 from .recognizers.recognizers import Entity
+
+# pymorphy2 (зависимость natasha) импортирует pkg_resources, setuptools<81 об этом предупреждает
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated", category=UserWarning)
 
 log = logging.getLogger("pii_mask.auditor")
 
