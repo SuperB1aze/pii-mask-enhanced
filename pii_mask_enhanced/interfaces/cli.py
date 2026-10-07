@@ -93,7 +93,7 @@ def cmd_mask(args: argparse.Namespace) -> int:
         types = DEFAULT_TYPES
     org_names = ()
     if getattr(args, "org_dict", None):
-        from ..detection.recognizers import load_org_dict
+        from ..detection.recognizers.recognizers import load_org_dict
 
         org_names = load_org_dict(args.org_dict)
     ner_types = (tuple(x.strip().upper() for x in args.ner_types.split(","))

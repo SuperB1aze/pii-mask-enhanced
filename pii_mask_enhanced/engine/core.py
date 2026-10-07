@@ -15,7 +15,8 @@ from __future__ import annotations
 import copy
 import re
 
-from ..detection.recognizers import DATE_AFTER_RE, Entity, digits, find_format_entities
+from ..detection.recognizers.recognizers import Entity, digits, find_format_entities
+from ..detection.recognizers.regulars import DATE_AFTER_RE
 
 LABEL_RE = re.compile(r"\{\{([A-Z]+)_(\d+)\}\}")
 PHONE_SCAN_RE = re.compile(r"\+?[78][\d \-()]{9,18}\d")
@@ -36,7 +37,7 @@ _TYPO_RE = re.compile("[" + "".join(_TYPO_TWINS) + "]")
 def _org_core(value: str) -> str:
     # Ядро названия организации без правовой формы и без склонения. Составные названия не берем.
 
-    from ..detection.recognizers import ORG_FORM_RE
+    from ..detection.recognizers.regulars import ORG_FORM_RE
 
     core = ORG_FORM_RE.sub("", value).strip(" \t«»\"',.-")
     return core if core and " " not in core else ""
@@ -101,7 +102,7 @@ class Masker:
     def _ner_org_ok(self, ent) -> bool:
         # Организация от NER: с правовой формой или без разницы. Правило касается ТОЛЬКО организаций и только тех, что предложил NER.
         if ent.type == "ORG" and self.ner_org_needs_form:
-            from ..detection.recognizers import ORG_FORM_RE
+            from ..detection.recognizers.regulars import ORG_FORM_RE
 
             return bool(ORG_FORM_RE.search(ent.text))
         if ent.type == "PERSON" and self.ner_person_needs_fio:
@@ -441,7 +442,7 @@ class Masker:
 
     @staticmethod
     def _is_own_artifact(s: str) -> bool:
-        from ..detection.recognizers import FAKE_EMAIL_RE
+        from ..detection.recognizers.regulars import FAKE_EMAIL_RE
 
         s = s.strip()
         if LABEL_RE.search(s):

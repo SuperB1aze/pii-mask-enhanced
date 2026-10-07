@@ -16,7 +16,7 @@ import re
 
 import httpx
 
-from .recognizers import Entity
+from .recognizers.recognizers import Entity
 
 log = logging.getLogger("pii_mask.auditor")
 

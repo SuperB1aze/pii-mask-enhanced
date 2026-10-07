@@ -1,7 +1,7 @@
 """Regex-распознаватели: форматные ПД РФ. Валидаторы контрольных сумм обязаны отсекать мусор."""
 import pytest
 
-from pii_mask_enhanced.detection.recognizers import find_format_entities
+from pii_mask_enhanced.detection.recognizers.recognizers import find_format_entities
 
 
 def types_of(text, wanted=None):

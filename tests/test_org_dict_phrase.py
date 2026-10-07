@@ -78,7 +78,7 @@ class TestDictionaryBeatsGuesswork:
         Проверяем не через NER (он требует моделей и медленный), а напрямую: спан
         того же участка, объявленный персоной, не должен вытеснять словарное ORG.
         """
-        from pii_mask_enhanced.detection.recognizers import Entity
+        from pii_mask_enhanced.detection.recognizers.recognizers import Entity
 
         text = "Коллега Ромашка Россия отвечал за логистику."
         start = text.index("Ромашка Россия")

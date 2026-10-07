@@ -95,7 +95,7 @@ def test_speaker_markers_untouched():
 
 def test_auditor_artifacts_do_not_cascade():
     # аудитор вернул наши же фейки/метки как "ПД" - они не должны маскироваться вторым слоем
-    from pii_mask_enhanced.detection.recognizers import Entity
+    from pii_mask_enhanced.detection.recognizers.recognizers import Entity
 
     m = Masker()
     src = "тел +7 903 123-45-67, почта ivan@example.org, автор Иван Петров"

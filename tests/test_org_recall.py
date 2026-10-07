@@ -13,7 +13,8 @@
 теряет название и на отдельной строке, если рядом стоят даты или тире.
 """
 from pii_mask_enhanced.engine.core import Masker
-from pii_mask_enhanced.detection.recognizers import ORG_TRAILING_FORM_RE, find_format_entities, load_org_dict
+from pii_mask_enhanced.detection.recognizers.recognizers import find_format_entities, load_org_dict
+from pii_mask_enhanced.detection.recognizers.regulars import ORG_TRAILING_FORM_RE
 
 CV_FRAGMENT = (
     "Апрель 2024 —      Ромашка Россия\n"

@@ -82,7 +82,7 @@ def test_supported_name_accepted_without_name_grammemes():
     знает марку "Аквабрис", и отличает их только сам документ - тем, что назвал
     фамилию рядом с правовой формой.
     """
-    from pii_mask_enhanced.detection.recognizers import Entity
+    from pii_mask_enhanced.detection.recognizers.recognizers import Entity
 
     ent = Entity("PERSON", "Метелина", 0, 8, "метелина")
     strict = Masker(types=("PERSON",), ner_person_needs_fio=True)

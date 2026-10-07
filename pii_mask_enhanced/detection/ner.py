@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from .recognizers import Entity
+from .recognizers.recognizers import Entity
 
 _TYPE_MAP = {"PER": "PERSON", "ORG": "ORG", "LOC": "LOC"}
 
