@@ -7,45 +7,35 @@
 - метка, которой не было во входе, при unmask превращается в UNKNOWN - защита
   от выдуманных моделью данных.
 
-Форматные типы PHONE/EMAIL заменяются на формат-сохраняющие фейки
-(+7 000 ... / userN@example.com), остальное - на метки {{TYPE_N}}.
+Устройство: Masker собирает кандидатов (распознаватели, NER, аудитор), расширяет их
+повторами (propagation), решает пересечения (_resolve) и выдает метки (labels).
 """
 from __future__ import annotations
 
 import copy
 import re
 
-from ..detection.recognizers.recognizers import Entity, digits, find_format_entities
-from ..detection.recognizers.regulars import DATE_AFTER_RE
+from ..detection.ner.ner import NatashaNer
+from ..detection.recognizers.recognizers import Entity, find_format_entities
+from ..detection.recognizers.regulars import ORG_FORM_RE
+from . import labels as lbl
+from . import propagation as prop
+from .labels import LABEL_RE, UNKNOWN  # noqa: F401  (UNKNOWN - часть API модуля)
 
-LABEL_RE = re.compile(r"\{\{([A-Z]+)_(\d+)\}\}")
-PHONE_SCAN_RE = re.compile(r"\+?[78][\d \-()]{9,18}\d")
-FAKE_EMAIL_SCAN_RE = re.compile(r"user\d+@example\.com", re.IGNORECASE)
-
-UNKNOWN = "[неизвестное значение]"
-
-# Типографские близнецы дефиса и пробела ломают токенизацию: неразрывный дефис 
+# Типографские близнецы дефиса и пробела ломают токенизацию: неразрывный дефис
 # U+2011 превращает составное название в мусор, и распознаватель не видит ни
-# организацию, ни стоящую рядом фамилию. 
+# организацию, ни стоящую рядом фамилию.
 # По этой причине нормализуем только текст, по которому мы ищем ПД
 
-_TYPO_TWINS = {"\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2212": "-",
-               "\u00a0": " ", "\u202f": " ", "\u2007": " "}
+_TYPO_TWINS = {"‐": "-", "‑": "-", "‒": "-", "−": "-",
+               " ": " ", " ": " ", " ": " "}
 _TYPO_RE = re.compile("[" + "".join(_TYPO_TWINS) + "]")
-
-
-def _org_core(value: str) -> str:
-    # Ядро названия организации без правовой формы и без склонения. Составные названия не берем.
-
-    from ..detection.recognizers.regulars import ORG_FORM_RE
-
-    core = ORG_FORM_RE.sub("", value).strip(" \t«»\"',.-")
-    return core if core and " " not in core else ""
 
 
 def normalize_for_analysis(text: str) -> str:
     """Свести типографские близнецы к простым символам, не меняя длину."""
     return _TYPO_RE.sub(lambda m: _TYPO_TWINS[m.group()], text)
+
 
 DEFAULT_TYPES = (
     "PERSON", "ORG", "PHONE", "EMAIL", "CARD", "INN", "OGRN", "UID", "REQ",
@@ -94,208 +84,31 @@ class Masker:
         self.inn_needs_label = inn_needs_label
         # Числа, у которых подпись реквизита стоит в соседней ячейке таблицы.
         self.trusted_numbers = frozenset(trusted_numbers)
-        wanted = self.types if self.ner_types is None else self.types & self.ner_types
-        self._use_ner = ner and bool({"PERSON", "ORG", "LOC"} & wanted)
+        # типы, которые принимаем от NER
+        self._ner_allowed = self.types if self.ner_types is None else self.types & self.ner_types
+        self._use_ner = ner and bool({"PERSON", "ORG", "LOC"} & self._ner_allowed)
         # названия организаций, заданные снаружи (см. recognizers.load_org_dict)
         self.org_names = tuple(org_names)
 
-    def _ner_org_ok(self, ent) -> bool:
+    # --- фильтры кандидатов ---
+
+    def _ner_org_ok(self, ent: Entity) -> bool:
         # Организация от NER: с правовой формой или без разницы. Правило касается ТОЛЬКО организаций и только тех, что предложил NER.
         if ent.type == "ORG" and self.ner_org_needs_form:
-            from ..detection.recognizers.regulars import ORG_FORM_RE
-
             return bool(ORG_FORM_RE.search(ent.text))
         if ent.type == "PERSON" and self.ner_person_needs_fio:
-            from ..detection.ner.ner import NatashaNer
-
             if self._supported(ent):
                 return True
             return NatashaNer.shared().looks_like_person(ent.text)
         return True
 
-    def _person_token_repeats(self, text: str, known: list) -> list:
-        """Находит незамаскированные повторы слов из уже найденных ФИО.
-
-        Например, отдельное "Иванов" после "Иванов Петр Сергеевич"; слова
-        короче 4 букв не ищем, иначе закроем случайные "О." или "ИП".
-        """
-        if "PERSON" not in self.types:
-            return []
-        from ..detection.ner.ner import _is_stop_term
-
-        taken = {(e.start, e.end) for e in known}
-        tokens = set()
-        for ent in known:
-            if ent.type != "PERSON":
-                continue
-            for tok in ent.text.replace(",", " ").split():
-                tok = tok.strip(".,;:()\"'\u00ab\u00bb")
-                if len(tok) >= 4 and tok[:1].isupper() and not _is_stop_term(tok):
-                    tokens.add(tok)
-        out = []
-        for tok in tokens:
-            for m in re.finditer(rf"(?<![\w-]){re.escape(tok)}(?![\w-])", text):
-                if (m.start(), m.end()) in taken:
-                    continue
-                out.append(Entity("PERSON", tok, m.start(), m.end(),
-                                  tok.lower(), source="person-token"))
-        return out
-
-    def _dates_after_docrefs(self, text: str, known: list) -> list:
-        # Дата сразу за номером документа
-        if "DATE" not in self.types:
-            return []
-        out = []
-        for ent in known:
-            if ent.type != "DOCREF":
-                continue
-            m = DATE_AFTER_RE.match(text, ent.end)
-            if m:
-                out.append(Entity("DATE", m.group(1), m.start(1), m.end(1),
-                                  m.group(1).lower(), source="docdate"))
-        return out
-
-    @staticmethod
-    def _repeats(text: str, values: set[str], known: list) -> list:
-        # Повторные вхождения уже опознанных значений, которых нет среди находок.
-
-        taken = {(e.start, e.end) for e in known}
-        by_value = {}
-        for e in known:
-            by_value.setdefault(e.text.strip(), e)
-        out = []
-        for value in values:
-            if len(value) < 3:
-                continue        # два знака встречаются в тексте случайно
-            src = by_value[value]
-            start = 0
-            while True:
-                at = text.find(value, start)
-                if at < 0:
-                    break
-                start = at + len(value)
-                if (at, start) in taken:
-                    continue
-                before = text[at - 1] if at else " "
-                after = text[start] if start < len(text) else " "
-                # Только целым токеном: иначе номер найдется внутри другого числа.
-                # Исключение - "г" сразу за датой ("01.09.2026г.")
-                tail_year = (src.type == "DATE" and after in "гГ"
-                             and text[start + 1: start + 2] in {".", "", " ", "\n", ","})
-                if before.isalnum() or (after.isalnum() and not tail_year):
-                    continue
-                if tail_year:
-                    start += 2 if text[start + 1: start + 2] == "." else 1
-                    value_here = text[at:start]
-                    out.append(Entity(src.type, value_here, at, start, src.key))
-                    continue
-                out.append(Entity(src.type, value, at, start, src.key))
-        return out
-
-    # Второе имя сразу за названием: "Ромашка (Romashka)", "Агентство ... (АСИ)", скрытое за скобкой
-    _ALIAS_RE = re.compile(r"[ \t]*\(([A-ZА-ЯЁ][A-Za-zА-Яа-яЁё0-9 .&-]{1,30})\)")
-
-    @staticmethod
-    def _bracket_aliases(text: str, known: list) -> list:
-        out = []
-        for src in known:
-            if src.type != "ORG":
-                continue
-            m = Masker._ALIAS_RE.match(text, src.end)
-            if not m:
-                continue
-            alias = m.group(1).strip()
-            # если больше трёх слов в скобках, то это пояснение
-            if len(alias.split()) > 3:
-                continue
-            out.append(Entity("ORG", alias, m.start(1), m.end(1), src.key))
-        return out
-
-    def _without_geo_persons(self, candidates: list) -> list:
-        # Убрать персоны, начатые географическим названием.
-        # Пример: "России Б.Н. Ельцина" приняло за фамилию страну, проверка убирает метку
-
-        if not self._use_ner:
-            return candidates
-        from ..detection.ner.ner import NatashaNer
-
-        ner = NatashaNer.shared()
-        out = []
-        for ent in candidates:
-            if ent.type == "PERSON":
-                head = ent.text.strip().split()[0] if ent.text.strip() else ""
-                if head and ner.is_geography(head):
-                    continue
-            out.append(ent)
-        return out
-
-    def _org_token_repeats(self, text: str, known: list) -> list:
-        # Слова подтвержденных названий, оставшиеся открытыми в других местах
-        from ..detection.ner.helpers import STOP_TERMS
-        from ..detection.ner.ner import NatashaNer
-
-        if not self._use_ner:
-            # без NER подтвержденные названия приходят из словаря и по правовой форме
-            return []
-        ner = NatashaNer.shared()
-        taken = {(e.start, e.end) for e in known}
-        tokens: dict[str, object] = {}
-        for src in known:
-            if src.type != "ORG":
-                continue
-            # аббревиатуру капсом берем от трех знаков, обычное слово от пяти
-            words = (re.findall(r"\b[А-ЯЁA-Z]{3,}\b", src.text)
-                     + re.findall(r"[А-ЯЁA-Z][\w-]{4,}", src.text))
-            for word in words:
-                if word.lower() in STOP_TERMS or ner.known_common_word(word):
-                    continue
-                tokens.setdefault(word, src)
-        out = []
-        for word, src in tokens.items():
-            # аббревиатура не укорачивается
-            stem = (word if word.isupper()
-                    else word[:-1] if word[-1].lower() in "аеёиоуыэюяьй" else word)
-            if len(stem) < (3 if word.isupper() else 5):
-                continue
-            for m in re.finditer(re.escape(stem) + r"[а-яёa-z]{0,3}\b", text):
-                if (m.start(), m.end()) in taken:
-                    continue
-                if m.start() and (text[m.start() - 1].isalnum()
-                                  or text[m.start() - 1] in "-_"):
-                    continue
-                out.append(Entity(src.type, m.group(), m.start(), m.end(), src.key))
-        return out
-
-    @staticmethod
-    def _org_case_repeats(text: str, known: list) -> list:
-        # Подтвержденная организация в косвенном падеже.
-        taken = {(e.start, e.end) for e in known}
-        out = []
-        for src in known:
-            if src.type != "ORG" or len(src.text.strip()) < 5:
-                continue
-            value = _org_core(src.text)
-            if not value:
-                continue
-            # склонение меняет окончание, поэтому ищем по основе без последней буквы
-            stem = value[:-1] if value[-1].lower() in "аеёиоуыэюяьй" else value
-            if len(stem) < 5:
-                continue
-            for m in re.finditer(re.escape(stem) + r"[а-яё]{0,3}\b", text):
-                if (m.start(), m.end()) in taken:
-                    continue
-                if m.start() and text[m.start() - 1].isalnum():
-                    continue
-                out.append(Entity(src.type, m.group(), m.start(), m.end(), src.key))
-        return out
-
-    def _inn_ok(self, ent) -> bool:
+    def _inn_ok(self, ent: Entity) -> bool:
         """ИНН без подписи в строгом режиме не принимается (см. inn_needs_label)."""
         if not self.inn_needs_label or ent.type != "INN":
             return True
         return ent.source != "bare" or ent.text.strip() in self.trusted_numbers
 
-    def _supported(self, ent) -> bool:
+    def _supported(self, ent: Entity) -> bool:
         """Назвал ли документ это имя контрагентом (см. supported_names)."""
         if not self.supported_names:
             return False
@@ -304,7 +117,7 @@ class Masker:
             return True
         return any(tok in self.supported_names for tok in key.split())
 
-    # --- unmask ---
+    # --- mask ---
 
     def mask(
         self,
@@ -313,23 +126,29 @@ class Masker:
         extra_entities: list[Entity] | None = None,
     ) -> tuple[str, dict]:
         mapping = copy.deepcopy(mapping) if mapping else {"version": 1, "labels": {}}
-        labels: dict = mapping["labels"]
 
         # Ищем по нормализованному тексту, отдаем исходный (см. _TYPO_TWINS).
         source = text
         text = normalize_for_analysis(text)
 
+        candidates = self._collect(text, extra_entities)
+        candidates = self._propagate(text, candidates)
+
+        # идемпотентность для стоящих меток и спанов внутри них
+        occupied = [(m.start(), m.end()) for m in LABEL_RE.finditer(text)]
+        accepted = self._resolve(candidates, occupied)
+        return self._render(source, accepted, mapping["labels"]), mapping
+
+    def _collect(self, text: str, extra_entities: list[Entity] | None) -> list[Entity]:
+        # Первичные находки: форматные распознаватели, NER, аудитор.
         candidates = [
             e for e in find_format_entities(text, self.org_names) if e.type in self.types
         ]
         if self._use_ner:
-            from ..detection.ner.ner import NatashaNer
-
-            allowed = self.types if self.ner_types is None else self.types & self.ner_types
             candidates += [e for e in NatashaNer.shared().extract(text)
-                           if e.type in allowed and self._ner_org_ok(e)]
+                           if e.type in self._ner_allowed and self._ner_org_ok(e)]
         if extra_entities:
-            candidates += [e for e in extra_entities if not self._is_own_artifact(e.text)]
+            candidates += [e for e in extra_entities if not lbl.is_own_artifact(e.text)]
 
         # номер, подписанный реквизитом где угодно в тексте, считается реквизитом везде
         if self.inn_needs_label:
@@ -337,55 +156,45 @@ class Masker:
                          if e.type == "INN" and e.source == "requisite"}
             candidates = [e for e in candidates
                           if self._inn_ok(e) or e.text.strip() in confirmed]
+        return candidates
+
+    def _propagate(self, text: str, candidates: list[Entity]) -> list[Entity]:
+        # Повторы и производные найденного. Порядок шагов важен: каждый следующий
+        # видит находки предыдущих.
+        if "PERSON" in self.types:
+            candidates += prop.person_token_repeats(text, candidates)
 
         # номер, опознанный по якорному слову где угодно в тексте, скрывается везде
-        candidates += self._person_token_repeats(text, candidates)
-
         anchored = {e.text.strip() for e in candidates if e.source == "docref"}
         anchored |= {e.text.strip() for e in candidates
                      if e.type in ("INN", "KPP") and e.source == "requisite"}
-        
         if anchored:
-            extra = [Entity(e.type, e.text, e.start, e.end, e.key, source="repeat")
-                     for e in self._repeats(text, anchored, candidates)]
-            candidates += extra
+            candidates += prop.repeats(text, anchored, candidates)
 
         # Дата рядом с номером документа - строго после повторов
-        dates = self._dates_after_docrefs(text, candidates)
-        if dates:
-            candidates += dates
-            candidates += [Entity(e.type, e.text, e.start, e.end, e.key, source="repeat")
-                           for e in self._repeats(
-                               text, {e.text.strip() for e in dates}, candidates)]
+        if "DATE" in self.types:
+            dates = prop.dates_after_docrefs(text, candidates)
+            if dates:
+                candidates += dates
+                candidates += prop.repeats(text, {e.text.strip() for e in dates}, candidates)
 
-        candidates += self._org_case_repeats(text, candidates)
-        candidates = self._without_geo_persons(candidates)
+        candidates += prop.org_case_repeats(text, candidates)
 
-        # слово из подтвержденного названия, оставшееся открытым в другом месте.
-        candidates += self._org_token_repeats(text, candidates)
+        if not self._use_ner:
+            # без NER подтвержденные названия приходят из словаря и по правовой форме,
+            # проверка по словарю общих слов недоступна
+            return candidates + prop.bracket_aliases(text, candidates)
 
-        # второе имя в скобках
-        aliases = self._bracket_aliases(text, candidates)
+        ner = NatashaNer.shared()
+        candidates = prop.without_geo_persons(candidates, ner)
+        # слово из подтвержденного названия, оставшееся открытым в другом месте
+        candidates += prop.org_token_repeats(text, candidates, ner)
+        # второе имя в скобках и его повторы
+        aliases = prop.bracket_aliases(text, candidates)
         if aliases:
             candidates += aliases
-            candidates += self._org_token_repeats(text, candidates + aliases)
-
-        # идемпотентность для стоящих меток и спанов внутри них
-        occupied = [(m.start(), m.end()) for m in LABEL_RE.finditer(text)]
-        accepted = self._resolve(candidates, occupied)
-
-        replacements: list[tuple[int, int, str]] = []
-        for ent in sorted(accepted, key=lambda e: e.start):
-            placeholder = self._assign_label(labels, ent)
-            replacements.append((ent.start, ent.end, placeholder))
-
-        out, pos = [], 0
-        for start, end, placeholder in replacements:
-            out.append(source[pos:start])
-            out.append(placeholder)
-            pos = end
-        out.append(source[pos:])
-        return "".join(out), mapping
+            candidates += prop.org_token_repeats(text, candidates, ner)
+        return candidates
 
     @staticmethod
     def _resolve(candidates: list[Entity], occupied: list[tuple[int, int]]) -> list[Entity]:
@@ -411,57 +220,16 @@ class Masker:
             accepted.append(ent)
         return accepted
 
-    def _assign_label(self, labels: dict, ent: Entity) -> str:
-        for placeholder, rec in labels.items():
-            if rec["type"] == ent.type and (
-                rec["key"] == ent.key or ent.key in rec.get("aliases", [])
-            ):
-                return placeholder
-
-        # одиночное имя линкуем к единственному полному ФИО с этим токеном
-        if ent.type == "PERSON" and " " not in ent.key:
-            hosts = [
-                (placeholder, rec)
-                for placeholder, rec in labels.items()
-                if rec["type"] == "PERSON" and " " in rec["key"] and ent.key in rec["key"].split()
-            ]
-            if len(hosts) == 1:
-                placeholder, rec = hosts[0]
-                rec.setdefault("aliases", []).append(ent.key)
-                return placeholder
-
-        n = 1 + max(
-            (rec["n"] for rec in labels.values() if rec["type"] == ent.type), default=0
-        )
-        placeholder = self._make_placeholder(ent.type, n)
-        original = ent.text
-        # лемму подставляем только для явно косвенной формы
-        if ent.type == "PERSON" and ent.oblique:
-            original = ent.key.title()  # восстанавливается именительный падеж
-        labels[placeholder] = {"type": ent.type, "original": original, "key": ent.key, "n": n}
-        return placeholder
-
     @staticmethod
-    def _is_own_artifact(s: str) -> bool:
-        from ..detection.recognizers.regulars import FAKE_EMAIL_RE
-
-        s = s.strip()
-        if LABEL_RE.search(s):
-            return True
-        if FAKE_EMAIL_RE.match(s):
-            return True
-        d = digits(s)
-        return len(d) == 11 and d[1:4] == "000"
-
-    @staticmethod
-    def _make_placeholder(etype: str, n: int) -> str:
-        if etype == "PHONE":
-            return f"+7 000 000-{n // 100:02d}-{n % 100:02d}"
-        if etype == "EMAIL":
-            return f"user{n}@example.com"
-        return f"{{{{{etype}_{n}}}}}"
-
-    # --- unmask ---
+    def _render(source: str, accepted: list[Entity], labels: dict) -> str:
+        # Метки выдаются слева направо: номер N отражает порядок появления в тексте.
+        out, pos = [], 0
+        for ent in sorted(accepted, key=lambda e: e.start):
+            out.append(source[pos:ent.start])
+            out.append(lbl.assign_label(labels, ent))
+            pos = ent.end
+        out.append(source[pos:])
+        return "".join(out)
 
     def mask_with_audit(self, text: str, mapping: dict | None = None) -> tuple[str, dict]:
         # mask + второй проход локальной LLM по уже замаскированному тексту.
@@ -478,34 +246,7 @@ class Masker:
             masked, mapping = self.mask(masked, mapping, extra_entities=extras)
         return masked, mapping
 
+    # --- unmask ---
+
     def unmask(self, text: str, mapping: dict) -> str:
-        labels: dict = mapping.get("labels", {})
-
-        def sub_label(m: re.Match) -> str:
-            rec = labels.get(m.group(0))
-            return rec["original"] if rec else UNKNOWN
-
-        text = LABEL_RE.sub(sub_label, text)
-
-        phone_by_digits = {
-            digits(placeholder): rec["original"]
-            for placeholder, rec in labels.items()
-            if rec["type"] == "PHONE"
-        }
-
-        def sub_phone(m: re.Match) -> str:
-            d = digits(m.group(0))
-            if d in phone_by_digits:
-                return phone_by_digits[d]
-            if d[1:4] == "000":  # выдуманный моделью номер из фейкового диапазона
-                return UNKNOWN
-            return m.group(0)
-
-        text = PHONE_SCAN_RE.sub(sub_phone, text)
-
-        def sub_email(m: re.Match) -> str:
-            rec = labels.get(m.group(0).lower())
-            return rec["original"] if rec else UNKNOWN
-
-        text = FAKE_EMAIL_SCAN_RE.sub(sub_email, text)
-        return text
+        return lbl.unmask(text, mapping)
