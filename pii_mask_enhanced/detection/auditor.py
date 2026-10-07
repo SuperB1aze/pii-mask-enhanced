@@ -104,7 +104,8 @@ def _plausible_candidate(etype: str, text: str) -> bool:
     1. Родовой термин из STOP_TERMS - не сущность, кто бы его ни предложил.
     2. PERSON обязан содержать слово, похожее на имя: либо словарь знает его как имя/фамилию/отчество, либо не знает вовсе. Фраза, целиком состоящая из известных нарицательных, персоной не является.
     """
-    from .ner import _NAME_GRAMMEMES, _is_stop_term
+    from .ner.helpers import NAME_GRAMMEMES
+    from .ner.ner import _is_stop_term
 
     if _is_stop_term(text):
         return False
@@ -129,7 +130,7 @@ def _plausible_candidate(etype: str, text: str) -> bool:
         known = [p for p in parses if p.is_known]
         if not known:
             return True  # слова нет в словаре - может быть редким именем
-        if any(g in _NAME_GRAMMEMES for p in known for g in p.tag.grammemes):
+        if any(g in NAME_GRAMMEMES for p in known for g in p.tag.grammemes):
             return True
     return False
 

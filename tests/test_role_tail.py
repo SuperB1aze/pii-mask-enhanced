@@ -11,7 +11,7 @@
 части настоящего названия - с прописной ("Технопарк - Заречье").
 """
 from pii_mask_enhanced.engine.core import Masker
-from pii_mask_enhanced.detection.ner import _role_tail_len
+from pii_mask_enhanced.detection.ner.ner import _role_tail_len
 
 
 def _mask(text: str, **kw) -> tuple[str, dict]:

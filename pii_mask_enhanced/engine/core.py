@@ -106,7 +106,7 @@ class Masker:
 
             return bool(ORG_FORM_RE.search(ent.text))
         if ent.type == "PERSON" and self.ner_person_needs_fio:
-            from ..detection.ner import NatashaNer
+            from ..detection.ner.ner import NatashaNer
 
             if self._supported(ent):
                 return True
@@ -121,7 +121,7 @@ class Masker:
         """
         if "PERSON" not in self.types:
             return []
-        from ..detection.ner import _is_stop_term
+        from ..detection.ner.ner import _is_stop_term
 
         taken = {(e.start, e.end) for e in known}
         tokens = set()
@@ -217,7 +217,7 @@ class Masker:
 
         if not self._use_ner:
             return candidates
-        from ..detection.ner import NatashaNer
+        from ..detection.ner.ner import NatashaNer
 
         ner = NatashaNer.shared()
         out = []
@@ -231,7 +231,8 @@ class Masker:
 
     def _org_token_repeats(self, text: str, known: list) -> list:
         # Слова подтвержденных названий, оставшиеся открытыми в других местах
-        from ..detection.ner import STOP_TERMS, NatashaNer
+        from ..detection.ner.helpers import STOP_TERMS
+        from ..detection.ner.ner import NatashaNer
 
         if not self._use_ner:
             # без NER подтвержденные названия приходят из словаря и по правовой форме
@@ -322,7 +323,7 @@ class Masker:
             e for e in find_format_entities(text, self.org_names) if e.type in self.types
         ]
         if self._use_ner:
-            from ..detection.ner import NatashaNer
+            from ..detection.ner.ner import NatashaNer
 
             allowed = self.types if self.ner_types is None else self.types & self.ner_types
             candidates += [e for e in NatashaNer.shared().extract(text)
