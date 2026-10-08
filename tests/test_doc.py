@@ -107,7 +107,7 @@ def test_configured_soffice_path_wins(monkeypatch, tmp_path):
 
 
 def _run_cli(argv):
-    from pii_mask_enhanced.interfaces.cli import main
+    from pii_mask_enhanced.interfaces.cli.cli import main
 
     old, sys.argv = sys.argv, ["pii-mask", *argv]
     try:

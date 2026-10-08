@@ -81,7 +81,7 @@ def test_cli_masks_pdf_into_markdown(tmp_path):
     """Сквозной путь: .pdf на входе, .masked.md и реестр на выходе."""
     import sys
 
-    from pii_mask_enhanced.interfaces.cli import main
+    from pii_mask_enhanced.interfaces.cli.cli import main
 
     src = _pdf(tmp_path / "doc.pdf", 'OOO "Romashka", INN 6083778353')
     out = tmp_path / "doc.masked.md"

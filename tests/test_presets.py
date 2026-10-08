@@ -78,7 +78,7 @@ def test_resolve_explains_the_choice():
 # --- CLI -------------------------------------------------------------------
 
 def run(args, cwd):
-    return subprocess.run([sys.executable, "-m", "pii_mask_enhanced.interfaces.cli", *args],
+    return subprocess.run([sys.executable, "-m", "pii_mask_enhanced.interfaces.cli.cli", *args],
                           capture_output=True, text=True, cwd=cwd)
 
 

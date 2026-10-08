@@ -17,7 +17,7 @@ dev = ["pytest>=8"]
 word = ["pywin32>=306; sys_platform == 'win32'"]
 
 [project.scripts]
-pii-mask = "pii_mask_enhanced.interfaces.cli:main"
+pii-mask = "pii_mask_enhanced.interfaces.cli.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
