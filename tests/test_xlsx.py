@@ -352,3 +352,57 @@ def test_strict_inn_masks_labelled_neighbour(tmp_path):
     out = xlsx.cell_texts(dst)
     assert "6083778353" not in out, "настоящий ИНН утек"
     assert "1063391630" in out, "артикул маскировать не надо"
+
+
+# --- утечки: текст книги вне ячеек ---
+
+def _with_parts(path, parts: dict[str, str]):
+    """Заменить или добавить части книги."""
+    with zipfile.ZipFile(path) as z:
+        old = {n: z.read(n) for n in z.namelist()}
+    old.update({n: b.encode("utf-8") for n, b in parts.items()})
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for n, b in old.items():
+            z.writestr(n, b)
+    return path
+
+
+def _mask_part(tmp_path, parts, types, part):
+    from pii_mask_enhanced.engine.core import Masker
+
+    src = _with_parts(_book(tmp_path, shared=["Товар"]), parts)
+    dst = tmp_path / "out.xlsx"
+    xlsx.mask_workbook(src, dst, Masker(types=types))
+    return zipfile.ZipFile(dst).read(part).decode("utf-8")
+
+
+def test_sheet_header_and_footer_are_masked(tmp_path):
+    """Колонтитул печати - строка с кодами форматирования (&L, &R, &P) вокруг текста."""
+    sheet = ('<?xml version="1.0"?><worksheet xmlns="x"><sheetData/><headerFooter>'
+             "<oddHeader>&amp;LСоколова Анна Владимировна&amp;RСтр. &amp;P</oddHeader>"
+             "<firstFooter>&amp;CООО «Ромашка»</firstFooter></headerFooter></worksheet>")
+    body = _mask_part(tmp_path, {"xl/worksheets/sheet1.xml": sheet}, ("PERSON", "ORG"),
+                      "xl/worksheets/sheet1.xml")
+    assert "Соколова" not in body and "Ромашка" not in body
+    assert "&amp;L" in body and "&amp;RСтр. &amp;P" in body and "&amp;C" in body
+
+
+def test_threaded_comments_are_masked(tmp_path):
+    """Цепочка примечаний (новые примечания Excel) хранит текст без узлов <t>."""
+    tc = ('<?xml version="1.0"?><ThreadedComments xmlns="x">'
+          '<threadedComment ref="A1" id="{1}" personId="{2}">'
+          "<text>Ответственная: Соколова Анна Владимировна</text></threadedComment>"
+          "</ThreadedComments>")
+    body = _mask_part(tmp_path, {"xl/threadedComments/threadedComment1.xml": tc}, ("PERSON",),
+                      "xl/threadedComments/threadedComment1.xml")
+    assert "Соколова" not in body
+    assert "Ответственная" in body
+
+
+def test_comment_persons_are_cleared(tmp_path):
+    persons = ('<?xml version="1.0"?><personList xmlns="x"><person displayName="Соколова Анна"'
+               ' id="{2}" userId="sokolova@example.ru" providerId="None"/></personList>')
+    body = _mask_part(tmp_path, {"xl/persons/person.xml": persons}, ("PERSON",),
+                      "xl/persons/person.xml")
+    assert "Соколова" not in body and "sokolova" not in body
+    assert 'id="{2}"' in body
