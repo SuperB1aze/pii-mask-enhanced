@@ -195,7 +195,7 @@ class CMD:
     def cmd_serve(args: argparse.Namespace) -> int:
         import uvicorn
 
-        from ..api import app
+        from ..api.api import app
 
         uvicorn.run(app, host=args.host, port=args.port, log_level="info")
         return 0

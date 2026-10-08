@@ -1,7 +1,7 @@
 """HTTP-фасад: roundtrip через API, health, защита от недоступного аудитора."""
 from fastapi.testclient import TestClient
 
-from pii_mask_enhanced.interfaces.api import app
+from pii_mask_enhanced.interfaces.api.api import app
 
 client = TestClient(app)
 

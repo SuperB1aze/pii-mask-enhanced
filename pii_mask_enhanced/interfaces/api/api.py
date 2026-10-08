@@ -6,38 +6,16 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 
-from ..engine.core import DEFAULT_TYPES, Masker
+from ...engine.core import DEFAULT_TYPES, Masker
+from .schemas import MaskRequest, MaskResponse, UnmaskRequest, UnmaskResponse
 
 app = FastAPI(title="pii-mask-enhanced", docs_url=None, redoc_url=None)
 
 
-class MaskRequest(BaseModel):
-    text: str
-    mapping: dict | None = None
-    audit: bool = False
-    ner: bool = True
-    types: list[str] | None = None
-
-
-class MaskResponse(BaseModel):
-    masked_text: str
-    mapping: dict
-
-
-class UnmaskRequest(BaseModel):
-    text: str
-    mapping: dict
-
-
-class UnmaskResponse(BaseModel):
-    text: str
-
-
 @app.get("/health/live")
 def health() -> dict:
-    from ..detection.auditor import ollama_alive
+    from ...detection.auditor import ollama_alive
 
     return {"status": "ok", "auditor": ollama_alive()}
 
