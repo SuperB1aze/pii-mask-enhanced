@@ -48,3 +48,24 @@ class Validator:
             if expected == 100:
                 expected = 0
         return chk == expected
+
+    @staticmethod
+    def okpo_ok(num: str) -> bool:
+        num = num.strip()
+        if not num.isdigit() or len(num) not in (8, 10, 14):
+            return False
+
+        digits = [int(c) for c in num]
+        body, check = digits[:-1], digits[-1]
+
+        # веса идут по кругу 1..10: у ИП во втором проходе 9-я цифра - на 1, а не на 11
+        def calc(start: int) -> int:
+            return sum(d * ((start - 1 + i) % 10 + 1) for i, d in enumerate(body)) % 11
+
+        rem = calc(1)
+        if rem == 10:
+            rem = calc(3)
+            if rem == 10:
+                rem = 0
+
+        return rem == check

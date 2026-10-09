@@ -1,7 +1,7 @@
 """Именованные наборы типов: что считать ПД, знает сервис, а не вызывающий.
 
 Набор подбирался месяц по живым файлам и жил константами в телеграм-боте.
-Второй потребитель услуги подбирал бы те же девятнадцать типов и четыре флага
+Второй потребитель услуги подбирал бы те же двадцать типов и четыре флага
 заново - и получил бы другой результат на том же документе, причем молча: оба
 прогона отвечают кодом 0.
 
@@ -41,7 +41,7 @@ def test_resume_and_accounting_share_the_type_list():
     assert presets.get("resume").types == presets.get("accounting").types
 
 
-@pytest.mark.parametrize("etype", ["CARD", "SNILS", "PASSPORT"])
+@pytest.mark.parametrize("etype", ["CARD", "SNILS", "PASSPORT", "OKPO"])
 def test_presets_cover_personal_documents(etype):
     """Карта, СНИЛС и паспорт - прямые идентификаторы, с набором их не теряем."""
     assert etype in presets.get("accounting").types
@@ -59,6 +59,11 @@ def test_preset_masks_card_snils_and_passport(tmp_path):
     assert "4276 3800 1234 5679" not in masked
     assert "112-233-445 95" not in masked
     assert "4510 123456" not in masked
+
+
+def test_preset_masks_okpo(tmp_path):
+    masked, _ = mask_with(tmp_path, "ОКПО 12345678\n", ["--preset", "accounting"])
+    assert "12345678" not in masked
 
 
 def test_presets_differ_in_strictness_to_organisations():

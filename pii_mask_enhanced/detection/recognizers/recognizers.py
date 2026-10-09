@@ -45,6 +45,14 @@ def digits(s: str) -> str:
     return "".join(c for c in s if c.isdigit())
 
 
+def _requisite_type(label: str, num: str) -> str:
+    etype = helpers.REQ_TYPE.get(label.strip().lower(), "REQ")
+    # ОКПО с неверной контрольной суммой оставляем в REQ
+    if etype == "OKPO" and not Validator.okpo_ok(num):
+        return "REQ"
+    return etype
+
+
 def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Entity]:
     """Найти форматные ПД. org_names - словарь организаций (load_org_dict)."""
     out: list[Entity] = []
@@ -134,14 +142,14 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
             if not num:
                 continue        # у ИП нет КПП
             start = text.index(num, pos)
-            etype = helpers.REQ_TYPE.get(label.strip().lower(), "REQ")
+            etype = _requisite_type(label, num)
             out.append(Entity(etype, num, start, start + len(num), num,
                               source="requisite"))
             pos = start + len(num)
 
     for m in regs.REQUISITE_RE.finditer(text):
         num = m.group(2)
-        etype = helpers.REQ_TYPE.get(m.group(1).lower(), "REQ")
+        etype = _requisite_type(m.group(1), num)
         out.append(Entity(etype, num, m.start(2), m.end(2), num, source="requisite"))
 
     for m in regs.ACCOUNT_RE.finditer(text):

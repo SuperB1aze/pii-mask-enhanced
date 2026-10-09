@@ -2,6 +2,7 @@
 import pytest
 
 from pii_mask_enhanced.detection.recognizers.recognizers import find_format_entities
+from pii_mask_enhanced.detection.recognizers.validators import Validator
 
 
 def types_of(text, wanted=None):
@@ -334,13 +335,58 @@ def test_requisite_keeps_keyword_visible():
 def test_requisite_unknown_keyword_gets_own_type():
     """Реквизит без своего типа попадает в общий REQ.
 
-    Пример сменен дважды: сперва с КПП на БИК (у КПП с 31.08.2026 свой тип), потом
+    Пример сменен трижды: сперва с КПП на БИК (у КПП с 31.08.2026 свой тип), потом
     с БИК на ОКПО (у БИК свой тип с 02.09.2026 - иначе банковский блок счета
-    оставался открытым, потому что REQ в бухгалтерских документах выключают).
+    оставался открытым, потому что REQ в бухгалтерских документах выключают),
+    потом с ОКПО на ОКТМО (у ОКПО свой тип с 09.10.2026).
     Правило от этого не изменилось: незнакомая подпись по-прежнему дает REQ.
     """
-    ents = types_of("ОКПО 044525225 в карточке", "REQ")
-    assert [e.text for e in ents] == ["044525225"]
+    ents = types_of("ОКТМО 45382000 в карточке", "REQ")
+    assert [e.text for e in ents] == ["45382000"]
+
+
+# --- ОКПО ---
+
+@pytest.mark.parametrize("num", [
+    "12345678",        # юрлицо
+    "10000640",        # оба прохода дали 10 -> контрольная 0
+    "0123456789",      # ИП
+    "1000000014",      # ИП, второй проход: 9-я цифра с весом 1, а не 11
+    "10000000000001",  # обособленное подразделение
+])
+def test_okpo_checksum_accepts(num):
+    assert Validator.okpo_ok(num)
+
+
+@pytest.mark.parametrize("num", [
+    "12345679",        # чужая контрольная
+    "1000000013",      # так выходило с весами 3..11 без круга
+    "044525225",       # 9 цифр - это БИК
+    "1234567",
+])
+def test_okpo_checksum_rejects(num):
+    assert not Validator.okpo_ok(num)
+
+
+def test_okpo_labeled_gets_own_type():
+    ents = types_of("ОКПО 12345678 в карточке", "OKPO")
+    assert [e.text for e in ents] == ["12345678"]
+
+
+def test_okpo_in_paired_requisites():
+    ents = types_of("ИНН/КПП/ОКПО 7701234567/770101001/12345678", "OKPO")
+    assert [e.text for e in ents] == ["12345678"]
+
+
+def test_okpo_bad_checksum_falls_back_to_req():
+    """Опечатка рядом с подписью - не повод оставить число открытым."""
+    assert types_of("ОКПО 12345679", "OKPO") == []
+    assert [e.text for e in types_of("ОКПО 12345679", "REQ")] == ["12345679"]
+
+
+def test_okpo_bare_number_is_not_okpo():
+    """Одна контрольная цифра: без подписи каждое десятое число сойдет за ОКПО."""
+    assert types_of("заказ 12345678 отгружен", "OKPO") == []
 
 
 def test_kpp_has_its_own_type():

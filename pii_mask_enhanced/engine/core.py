@@ -39,13 +39,13 @@ def normalize_for_analysis(text: str) -> str:
 
 DEFAULT_TYPES = (
     "PERSON", "ORG", "PHONE", "EMAIL", "CARD", "INN", "OGRN", "UID", "REQ",
-    "SNILS", "PASSPORT", "TG", "URL", "ADDRESS",
+    "SNILS", "PASSPORT", "TG", "URL", "ADDRESS", "OKPO",
 )
 
 _PRIORITY = {
     "EMAIL": 1, "TG": 2, "CARD": 3, "SNILS": 4, "PHONE": 5,
     "INN": 6, "OGRN": 6, "KPP": 6, "REQ": 6, "DOCREF": 6, "DATE": 6,
-    "BIK": 6, "ACCOUNT": 6,
+    "BIK": 6, "ACCOUNT": 6, "OKPO": 6,
     "CERT": 6, "UID": 7,
     "PASSPORT": 7, "URL": 8,
     "ADDRESS": 8, "PERSON": 9, "ORG": 10, "LOC": 11,
@@ -167,7 +167,7 @@ class Masker:
         # номер, опознанный по якорному слову где угодно в тексте, скрывается везде
         anchored = {e.text.strip() for e in candidates if e.source == "docref"}
         anchored |= {e.text.strip() for e in candidates
-                     if e.type in ("INN", "KPP") and e.source == "requisite"}
+                     if e.type in ("INN", "KPP", "OKPO") and e.source == "requisite"}
         if anchored:
             candidates += prop.repeats(text, anchored, candidates)
 
