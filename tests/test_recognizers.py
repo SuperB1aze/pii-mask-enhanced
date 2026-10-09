@@ -150,6 +150,46 @@ def test_url_does_not_eat_filenames():
     assert types_of("Правь core.py и README.md, смотри tests/test_api.py", "URL") == []
 
 
+@pytest.mark.parametrize("src, url", [
+    ("сайт президент.рф", "президент.рф"),
+    ("портал госуслуги.рф/help", "госуслуги.рф/help"),
+    ("www.кто-ты.рф", "www.кто-ты.рф"),
+    ("сайт москва.рус", "москва.рус"),
+    ("сайт xn--d1abbgf6aiiy.xn--p1ai", "xn--d1abbgf6aiiy.xn--p1ai"),
+    ("site.su", "site.su"),
+])
+def test_url_cyrillic_and_punycode_domains(src, url):
+    assert [e.text for e in types_of(src, "URL")] == [url]
+
+
+@pytest.mark.parametrize("src, url", [
+    ("наш сайт: example.shop", "example.shop"),
+    ("сайт компании — пример.бел", "пример.бел"),
+    ("ссылка на shop.tech/catalog", "shop.tech/catalog"),
+    ("домен ivanov.dev", "ivanov.dev"),
+    ("сайт: компания.москва", "компания.москва"),
+])
+def test_url_any_zone_after_hint(src, url):
+    """Редкую зону берем только после слова-подсказки."""
+    assert [e.text for e in types_of(src, "URL")] == [url]
+
+
+@pytest.mark.parametrize("src", [
+    "магазин example.shop",          # нет подсказки
+    "г.Москва", "ул.Москва д.5", "сайт: г.москва",
+    "т.е. всё", "и т.д.", "версия 3.10", "сайт обновлён 01.09.2026",
+    "ссылка на отчет.pdf",
+    "законодательство РФ.Статья 5",
+])
+def test_url_not_a_domain(src):
+    assert types_of(src, "URL") == []
+
+
+def test_url_with_scheme_found_once():
+    ents = types_of("сайт https://президент.рф/news", "URL")
+    assert [e.text for e in ents] == ["https://президент.рф/news"]
+
+
 def test_url_does_not_swallow_email():
     ents = find_format_entities("почта hr@severbank-example.ru")
     assert [(e.type, e.text) for e in ents if e.type == "EMAIL"] == [

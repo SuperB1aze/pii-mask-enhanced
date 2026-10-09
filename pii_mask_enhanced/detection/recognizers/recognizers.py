@@ -68,12 +68,20 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
     for m in regs.TG_RE.finditer(text):
         out.append(Entity("TG", m.group(), m.start(), m.end(), m.group().lower()))
 
-    for rx in (regs.URL_SCHEME_RE, regs.BARE_DOMAIN_RE):
+    # у HINTED_DOMAIN_RE домен в группе 1; пересечения не дублируем ("https://сайт.рф")
+    urls: list[tuple[int, int]] = []
+    for rx in (regs.URL_SCHEME_RE, regs.BARE_DOMAIN_RE, regs.HINTED_DOMAIN_RE):
         for m in rx.finditer(text):
-            url = m.group().rstrip(".,;:!?")
+            g = 1 if rx.groups else 0
+            url = m.group(g).rstrip(".,;:!?")
+            start = m.start(g)
+            end = start + len(url)
             if _url_host(url) in helpers.STOP_HOSTS:
                 continue
-            out.append(Entity("URL", url, m.start(), m.start() + len(url), url.lower()))
+            if any(start < e and s < end for s, e in urls):
+                continue
+            urls.append((start, end))
+            out.append(Entity("URL", url, start, end, url.lower()))
 
     for m in regs.PHONE_RE.finditer(text):
         d = digits(m.group())

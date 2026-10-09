@@ -6,7 +6,7 @@ FAKE_PHONE_CODE = "000"
 FAKE_EMAIL_RE = re.compile(r"^user\d+@example\.com$", re.IGNORECASE)
 
 PHONE_RE = re.compile(r"(?<!\d)(?:\+7|8)[ \-]?\(?\d{3}\)?[ \-]?\d{3}[ \-]?\d{2}[ \-]?\d{2}(?!\d)")
-EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+EMAIL_RE = re.compile(r"[\w.%+\-]+@[\w.\-]+\.(?:[A-Za-zА-Яа-яЁё]{2,}|xn--[a-z0-9\-]+)")
 TG_RE = re.compile(r"(?<![\w.\-@])@[A-Za-z][A-Za-z0-9_]{4,31}\b")
 CARD_RE = re.compile(r"(?<!\d)(?:\d{4}[ \-]?){3}\d{4}(?!\d)")
 # отдельным словом: число в артикуле ("OZN7701234567") может случайно пройти проверку
@@ -117,13 +117,33 @@ INITIALS_RE = re.compile(
 )
 
 URL_SCHEME_RE = re.compile(r"https?://[^\s<>\"'`)\]}]+", re.IGNORECASE)
+
+# очень желательно оставлять сайты с http
 # без http - только www. или свои зоны: иначе core.py и README.md станут доменами
+LABEL = r"(?:xn--[a-z0-9-]+|[a-zа-яё0-9](?:[a-zа-яё0-9-]*[a-zа-яё0-9])?)"
+# ".москва" здесь нет: иначе "г.Москва" станет доменом. Она ловится через HINTED_DOMAIN_RE
+TLD = (r"(?:ru|su|com|org|net|io|co|biz|info|moscow"
+        r"|рф|рус|онлайн|сайт|орг|дети|xn--p1ai|xn--p1acf)")
+URL_PATH = r"(?:/[^\s<>\"'`)\]}]*)?"
 BARE_DOMAIN_RE = re.compile(
-    r"(?<![@\w./-])(?:www\.[a-z0-9-]+(?:\.[a-z0-9-]+)*"
-    r"|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:ru|com|org|net|io|co|biz|info|рф))"
-    r"(?![\w@])(?:/[^\s<>\"'`)\]}]*)?",
+    rf"(?<![@\w./-])(?:www\.{LABEL}(?:\.{LABEL})*|{LABEL}(?:\.{LABEL})*\.{TLD})"
+    rf"(?![\w@]){URL_PATH}",
     re.IGNORECASE,
 )
+
+# исключение для ложных срабатываний по домену
+FILE_EXT = (r"(?:pdf|docx?|xlsx?|pptx?|odt|rtf|txt|csv|json|xml|ya?ml|md|py|js|ts|sh"
+            r"|zip|rar|7z|png|jpe?g|gif|svg|mp[34]|avi|mov|exe|msi|log|ini|cfg)")
+# любая буквенная зона, но только после слова-подсказки: "сайт: example.shop"
+HINTED_DOMAIN_RE = re.compile(
+    r"(?:\b(?:веб-?)?сайт\w*|портал\w*|домен\w*|ссылк\w*|url|website|site|web)"
+    r"(?:[ \t]+[\w-]{1,15}){0,2}[ \t]*[:\-–—]?[ \t]*"
+    rf"((?<![@\w./-])(?=[\w-]{{2}}){LABEL}(?:\.{LABEL})*"
+    rf"\.(?!{FILE_EXT}(?![\w-]))(?:xn--[a-z0-9-]+|[a-zа-яё]{{2,24}})"
+    rf"(?![\w@-]){URL_PATH})",
+    re.IGNORECASE,
+)
+
 
 ADDRESS_RE = re.compile(
     rf"(?:\d{{6}},?{helpers.WRAP})?{helpers.ADDR_REGION}{helpers.ADDR_DISTRICT}{helpers.ADDR_CITY}"
