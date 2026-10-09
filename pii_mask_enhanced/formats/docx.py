@@ -8,7 +8,8 @@ import zipfile
 from pathlib import Path
 from typing import Callable, NamedTuple
 
-from .office_xml import clear_attrs, escape, mask_values, unescape, unknown_text_parts, write_copy
+from .office_xml import (clear_attrs, counterparty_words, escape, mask_values,
+                         numbers_after_labels, unescape, unknown_text_parts, write_copy)
 
 _TOKEN_RE = re.compile(
     # узел с текстом: видимый текст, удаленный при рецензировании, код поля
@@ -191,6 +192,8 @@ def mask_document(src: str | Path, dst: str | Path, masker, mapping: dict | None
     if unknown:
         raise ValueError(f"В документе есть текст, с которым возникла проблема обезличивания: {unknown}, может произойти утечка ПД.")
 
-    masked, mapping = mask_values(paragraph_texts(src), masker, mapping)
+    values = paragraph_texts(src)
+    masker = masker.with_hints(counterparty_words(values), numbers_after_labels(values))
+    masked, mapping = mask_values(values, masker, mapping)
     rewrite(src, dst, masked)
     return mapping

@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
 
-from ...engine.core import DEFAULT_TYPES, Masker
+from ...engine.core import Masker
+from ...engine.settings import Options, build_masker, type_names
 from .schemas import MaskRequest, MaskResponse, UnmaskRequest, UnmaskResponse
 
 app = FastAPI(title="pii-mask-enhanced", docs_url=None, redoc_url=None)
@@ -22,8 +23,22 @@ def health() -> dict:
 
 @app.post("/mask", response_model=MaskResponse)
 def mask(req: MaskRequest) -> MaskResponse:
-    types = tuple(t.upper() for t in req.types) if req.types else DEFAULT_TYPES
-    masker = Masker(types=types, ner=req.ner)
+    opts = Options(
+        preset=req.preset,
+        types=type_names(req.types),
+        ner=req.ner,
+        ner_types=type_names(req.ner_types),
+        ner_org_needs_form=req.ner_org_needs_form,
+        ner_person_needs_fio=req.ner_person_needs_fio,
+        inn_needs_label=req.inn_needs_label,
+        auto_profile=req.auto_profile,
+        org_names=tuple(req.org_names),
+        supported_names=tuple(req.supported_names),
+    )
+    try:
+        masker, _ = build_masker(opts, lambda: req.text)
+    except ValueError as exc:  # неизвестный набор или тип
+        raise HTTPException(status_code=400, detail=str(exc))
     try:
         if req.audit:
             masked, mapping = masker.mask_with_audit(req.text, req.mapping)

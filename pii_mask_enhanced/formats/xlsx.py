@@ -4,8 +4,9 @@ from __future__ import annotations
 import re
 import zipfile
 from pathlib import Path
-from .office_xml import (T_RE, clear_attrs, escape, mask_values, runs_text, tag,
-                         unknown_text_parts, unescape, write_copy)
+from .office_xml import (DIGITS_ONLY_RE, REQ_LABEL_RE, T_RE, clear_attrs, counterparty_words,
+                         escape, mask_values, runs_text, tag, unknown_text_parts, unescape,
+                         write_copy)
 
 # Контейнеры текстовых узлов <t>: ячейка общей таблицы, ячейка листа, комментарий.
 # Автор комментария хранится отдельным узлом, без <t>.
@@ -144,22 +145,9 @@ def rewrite(src: str | Path, dst: str | Path, values: list[str]) -> None:
         write_copy(zin, dst, done)
 
 
-# Правовые формы: по ним видно, кто в книге контрагент.
-_LEGAL_FORM = re.compile(
-    r"\b(ООО|ЗАО|ОАО|ПАО|НАО|АО|ИП|АНО|НКО|ФГУП|ГУП|МУП|ФГБУ)\b", re.IGNORECASE)
-_WORD_SPLIT = re.compile(r"[^\w\-]+")
-
-
-def supported_names(src: str | Path) -> tuple[str, ...]:
+def supported_names(src: str | Path) -> frozenset[str]:
     # слова из ячеек с правовой формой - для строгого режима распознавателя.
-    names: set[str] = set()
-    for value in cell_texts(src):
-        if not _LEGAL_FORM.search(value):
-            continue
-        for word in _WORD_SPLIT.split(value):
-            if len(word) >= 3 and not word.isdigit() and not _LEGAL_FORM.fullmatch(word):
-                names.add(word.lower())
-    return tuple(sorted(names))
+    return counterparty_words(cell_texts(src))
 
 
 # Ячейка листа с координатой: ссылка в общую таблицу (t="s"), текст в листе
@@ -167,11 +155,6 @@ def supported_names(src: str | Path) -> tuple[str, ...]:
 _CELL_RE = re.compile(
     rb'<c\s+r="([A-Z]+)(\d+)"([^>]*?)(?:/>|>(.*?)</c>)', re.S)
 _V_RE = re.compile(rb"<(?:\w+:)?v>(.*?)</(?:\w+:)?v>", re.S)
-
-# Подписи реквизитов: число рядом с такой подписью считается реквизитом.
-_REQ_LABEL = re.compile(r"^\s*(ИНН|КПП|ОГРН|ОГРНИП|БИК|СНИЛС|ОКПО|ОКТМО)\s*:?\s*$",
-                        re.IGNORECASE)
-_DIGITS_ONLY = re.compile(r"^\s*\d{5,20}\s*$")
 
 
 def _col_num(letters: bytes) -> int:
@@ -210,11 +193,11 @@ def labelled_numbers(src: str | Path) -> frozenset[str]:
         for name in (n for n in z.namelist() if re.match(r"^xl/worksheets/[^/]+\.xml$", n)):
             grid = _sheet_grid(z, name, shared)
             for (row, col), value in grid.items():
-                if not _DIGITS_ONLY.match(value):
+                if not DIGITS_ONLY_RE.match(value):
                     continue
                 left = grid.get((row, col - 1), "")
                 above = grid.get((row - 1, col), "")
-                if _REQ_LABEL.match(left) or _REQ_LABEL.match(above):
+                if REQ_LABEL_RE.match(left) or REQ_LABEL_RE.match(above):
                     out.add(value.strip())
     return frozenset(out)
 
@@ -225,14 +208,9 @@ def mask_workbook(src: str | Path, dst: str | Path, masker, mapping: dict | None
         unknown = unknown_text_parts(z, {n for n, _ in _parts(z)}, _NO_TEXT)
     if unknown:
         raise ValueError(f"В книге есть текст, с которым возникла проблема обезличивания: {unknown}, может произойти утечка ПД.")
-        
 
-    # Имена и реквизиты для строгого режима собираем здесь
-    if getattr(masker, "ner_person_needs_fio", False) and not masker.supported_names:
-        masker.supported_names = frozenset(supported_names(src))
-    if getattr(masker, "inn_needs_label", False) and not masker.trusted_numbers:
-        masker.trusted_numbers = labelled_numbers(src)
-
-    masked, mapping = mask_values(cell_texts(src), masker, mapping)
+    values = cell_texts(src)
+    masker = masker.with_hints(counterparty_words(values), labelled_numbers(src))
+    masked, mapping = mask_values(values, masker, mapping)
     rewrite(src, dst, masked)
     return mapping

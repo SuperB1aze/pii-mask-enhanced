@@ -6,6 +6,9 @@ import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape as _sax_escape
 
+from ..detection.registry.entity_types import REQUISITE_WORD
+from ..detection.registry.legal_forms import CELL_FORM
+
 # Ссылки на символы: числовые (`&#10;` - перевод строки в ячейке) и пять именованных из XML.
 _REF_RE = re.compile(r"&(?:#x([0-9A-Fa-f]+)|#(\d+)|(amp|lt|gt|quot|apos));")
 _NAMED = {"amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'"}
@@ -21,6 +24,14 @@ _PROPERTY_FIELDS = {
                           "dc:description", "cp:keywords", "cp:category"),
     "docProps/app.xml": ("Company", "Manager"),
 }
+
+# Правовые формы: по ним видно, кто в документе контрагент.
+_LEGAL_FORM = re.compile(rf"\b{CELL_FORM}\b", re.IGNORECASE)
+_WORD_SPLIT = re.compile(r"[^\w\-]+")
+
+# Подпись реквизита отдельной ячейкой: число рядом с ней считается реквизитом.
+REQ_LABEL_RE = re.compile(rf"^\s*{REQUISITE_WORD}\s*:?\s*$", re.IGNORECASE)
+DIGITS_ONLY_RE = re.compile(r"^\s*\d{5,20}\s*$")
 
 
 def unescape(text: str) -> str:
@@ -91,6 +102,31 @@ def write_copy(zin: zipfile.ZipFile, dst: str | Path, done: dict[str, bytes]) ->
         for info in zin.infolist():
             blob = done.get(info.filename) or zin.read(info.filename)
             zout.writestr(info, strip_properties(info.filename, blob))
+
+
+def counterparty_words(values: list[str]) -> frozenset[str]:
+    """Слова из значений с правовой формой: документ сам объявляет контрагентов."""
+    names: set[str] = set()
+    for value in values:
+        if not _LEGAL_FORM.search(value):
+            continue
+        for word in _WORD_SPLIT.split(value):
+            if len(word) >= 3 and not word.isdigit() and not _LEGAL_FORM.fullmatch(word):
+                names.add(word.lower())
+    return frozenset(names)
+
+
+def numbers_after_labels(values: list[str]) -> frozenset[str]:
+    """Числа сразу за подписью реквизита: ячейки таблицы Word идут подряд по строке."""
+    out: set[str] = set()
+    prev = ""
+    for value in values:
+        if not value.strip():
+            continue
+        if DIGITS_ONLY_RE.match(value) and REQ_LABEL_RE.match(prev):
+            out.add(value.strip())
+        prev = value
+    return frozenset(out)
 
 
 def mask_values(values: list[str], masker, mapping: dict | None) -> tuple[list[str], dict]:

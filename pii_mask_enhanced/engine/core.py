@@ -15,9 +15,14 @@ from __future__ import annotations
 import copy
 import re
 
+from ..detection.ner import morph
 from ..detection.ner.ner import NatashaNer
-from ..detection.recognizers.recognizers import Entity, find_format_entities
+from ..detection.recognizers.entity import Entity
+from ..detection.recognizers.finders.spans import overlaps
+from ..detection.recognizers.recognizers import find_format_entities
 from ..detection.recognizers.regulars import ORG_FORM_RE
+from ..detection.registry import sources
+from ..detection.registry.entity_types import DEFAULT_TYPES, PRIORITY, SPREAD_TYPES, check_types
 from . import labels as lbl
 from . import propagation as prop
 from .labels import LABEL_RE, UNKNOWN  # noqa: F401  (UNKNOWN - часть API модуля)
@@ -37,25 +42,6 @@ def normalize_for_analysis(text: str) -> str:
     return _TYPO_RE.sub(lambda m: _TYPO_TWINS[m.group()], text)
 
 
-DEFAULT_TYPES = (
-    "PERSON", "ORG", "PHONE", "EMAIL", "CARD", "INN", "OGRN", "UID", "REQ",
-    "SNILS", "PASSPORT", "TG", "URL", "ADDRESS", "OKPO",
-)
-
-_PRIORITY = {
-    "EMAIL": 1, "TG": 2, "CARD": 3, "SNILS": 4, "PHONE": 5,
-    "INN": 6, "OGRN": 6, "KPP": 6, "REQ": 6, "DOCREF": 6, "DATE": 6,
-    "BIK": 6, "ACCOUNT": 6, "OKPO": 6,
-    "CERT": 6, "UID": 7,
-    "PASSPORT": 7, "URL": 8,
-    "ADDRESS": 8, "PERSON": 9, "ORG": 10, "LOC": 11,
-}
-
-
-def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
-    return a[0] < b[1] and b[0] < a[1]
-
-
 class Masker:
     def __init__(
         self,
@@ -69,6 +55,8 @@ class Masker:
         inn_needs_label: bool = False,
         trusted_numbers: frozenset[str] = frozenset(),
     ):
+        check_types(types)
+        check_types(ner_types or ())
         self.types = set(types)
         # Каким типам верить со стороны NER. None - всем, что просили в types
         # (прежнее поведение). Ограничение нужно потому, что надежность
@@ -99,14 +87,23 @@ class Masker:
         if ent.type == "PERSON" and self.ner_person_needs_fio:
             if self._supported(ent):
                 return True
-            return NatashaNer.shared().looks_like_person(ent.text)
+            return morph.looks_like_person(ent.text)
         return True
 
     def _inn_ok(self, ent: Entity) -> bool:
         """ИНН без подписи в строгом режиме не принимается (см. inn_needs_label)."""
         if not self.inn_needs_label or ent.type != "INN":
             return True
-        return ent.source != "bare" or ent.text.strip() in self.trusted_numbers
+        return ent.source != sources.BARE or ent.text.strip() in self.trusted_numbers
+
+    def with_hints(self, supported_names: frozenset[str], trusted_numbers: frozenset[str]) -> Masker:
+        """Копия с подсказками документа для строгого режима; заданные явно не заменяются."""
+        clone = copy.copy(self)
+        if self.ner_person_needs_fio and not self.supported_names:
+            clone.supported_names = supported_names
+        if self.inn_needs_label and not self.trusted_numbers:
+            clone.trusted_numbers = trusted_numbers
+        return clone
 
     def _supported(self, ent: Entity) -> bool:
         """Назвал ли документ это имя контрагентом (см. supported_names)."""
@@ -153,7 +150,7 @@ class Masker:
         # номер, подписанный реквизитом где угодно в тексте, считается реквизитом везде
         if self.inn_needs_label:
             confirmed = {e.text.strip() for e in candidates
-                         if e.type == "INN" and e.source == "requisite"}
+                         if e.type == "INN" and e.source == sources.REQUISITE}
             candidates = [e for e in candidates
                           if self._inn_ok(e) or e.text.strip() in confirmed]
         return candidates
@@ -165,9 +162,9 @@ class Masker:
             candidates += prop.person_token_repeats(text, candidates)
 
         # номер, опознанный по якорному слову где угодно в тексте, скрывается везде
-        anchored = {e.text.strip() for e in candidates if e.source == "docref"}
+        anchored = {e.text.strip() for e in candidates if e.source == sources.DOCREF}
         anchored |= {e.text.strip() for e in candidates
-                     if e.type in ("INN", "KPP", "OKPO") and e.source == "requisite"}
+                     if e.type in SPREAD_TYPES and e.source == sources.REQUISITE}
         if anchored:
             candidates += prop.repeats(text, anchored, candidates)
 
@@ -185,15 +182,14 @@ class Masker:
             # проверка по словарю общих слов недоступна
             return candidates + prop.bracket_aliases(text, candidates)
 
-        ner = NatashaNer.shared()
-        candidates = prop.without_geo_persons(candidates, ner)
+        candidates = prop.without_geo_persons(candidates)
         # слово из подтвержденного названия, оставшееся открытым в другом месте
-        candidates += prop.org_token_repeats(text, candidates, ner)
+        candidates += prop.org_token_repeats(text, candidates)
         # второе имя в скобках и его повторы
         aliases = prop.bracket_aliases(text, candidates)
         if aliases:
             candidates += aliases
-            candidates += prop.org_token_repeats(text, candidates, ner)
+            candidates += prop.org_token_repeats(text, candidates)
         return candidates
 
     @staticmethod
@@ -206,15 +202,15 @@ class Masker:
         ordered = sorted(
             candidates,
             key=lambda e: (
-                0 if e.source == "dict" else 1,
-                _PRIORITY.get(e.type, 99),
+                0 if e.source == sources.DICT else 1,
+                PRIORITY[e.type],
                 -(e.end - e.start),
                 e.start,
             ),
         )
         for ent in ordered:
             span = (ent.start, ent.end)
-            if any(_overlaps(span, t) for t in taken):
+            if any(overlaps(span, t) for t in taken):
                 continue
             taken.append(span)
             accepted.append(ent)

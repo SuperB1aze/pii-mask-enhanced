@@ -348,10 +348,13 @@ def test_strict_inn_masks_labelled_neighbour(tmp_path):
         z.writestr("xl/sharedStrings.xml", sst)
         z.writestr("xl/worksheets/sheet1.xml", sheet)
     dst = tmp_path / "o.xlsx"
-    xlsx.mask_workbook(path, dst, Masker(types=("INN",), inn_needs_label=True))
+    masker = Masker(types=("INN",), inn_needs_label=True)
+    xlsx.mask_workbook(path, dst, masker)
     out = xlsx.cell_texts(dst)
     assert "6083778353" not in out, "настоящий ИНН утек"
     assert "1063391630" in out, "артикул маскировать не надо"
+    # подсказки одной книги не должны доставаться следующей
+    assert masker.trusted_numbers == frozenset()
 
 
 # --- утечки: текст книги вне ячеек ---

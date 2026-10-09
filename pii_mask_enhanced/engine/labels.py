@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import re
 
-from ..detection.recognizers.recognizers import Entity, digits
-from ..detection.recognizers.regulars import FAKE_EMAIL_RE
+from ..detection.recognizers.entity import Entity, digits
+from ..detection.recognizers.regulars import FAKE_EMAIL_RE, FAKE_PHONE_CODE
 
 LABEL_RE = re.compile(r"\{\{([A-Z]+)_(\d+)\}\}")
 PHONE_SCAN_RE = re.compile(r"\+?[78][\d \-()]{9,18}\d")
@@ -19,7 +19,7 @@ UNKNOWN = "[неизвестное значение]"
 
 def make_placeholder(etype: str, n: int) -> str:
     if etype == "PHONE":
-        return f"+7 000 000-{n // 100:02d}-{n % 100:02d}"
+        return f"+7 {FAKE_PHONE_CODE} {n // 10000:03d}-{n // 100 % 100:02d}-{n % 100:02d}"
     if etype == "EMAIL":
         return f"user{n}@example.com"
     return f"{{{{{etype}_{n}}}}}"
@@ -33,7 +33,7 @@ def is_own_artifact(s: str) -> bool:
     if FAKE_EMAIL_RE.match(s):
         return True
     d = digits(s)
-    return len(d) == 11 and d[1:4] == "000"
+    return len(d) == 11 and d[1:4] == FAKE_PHONE_CODE
 
 
 def assign_label(labels: dict, ent: Entity) -> str:
@@ -86,7 +86,7 @@ def unmask(text: str, mapping: dict) -> str:
         d = digits(m.group(0))
         if d in phone_by_digits:
             return phone_by_digits[d]
-        if d[1:4] == "000":  # выдуманный моделью номер из фейкового диапазона
+        if d[1:4] == FAKE_PHONE_CODE:  # выдуманный моделью номер из фейкового диапазона
             return UNKNOWN
         return m.group(0)
 

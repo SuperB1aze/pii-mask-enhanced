@@ -1,4 +1,6 @@
 """Ядро Masker: mask/unmask, консистентность меток, обратная подстановка."""
+import pytest
+
 from pii_mask_enhanced.engine.core import Masker, UNKNOWN
 
 
@@ -135,3 +137,17 @@ def test_oblique_form_still_normalized():
     masked, mapping = m.mask("Заявку Ивана Петрова согласовали.")
     person = next(v for v in mapping["labels"].values() if v["type"] == "PERSON")
     assert person["original"] == "Иван Петров"
+
+
+def test_unknown_type_is_refused():
+    """Опечатка в типе молча выключала бы маскировку этого типа."""
+    with pytest.raises(ValueError, match="INNN"):
+        Masker(types=("INNN",))
+
+
+def test_fake_phone_survives_ten_thousand_labels():
+    from pii_mask_enhanced.engine.labels import is_own_artifact, make_placeholder
+
+    fake = make_placeholder("PHONE", 12345)
+    assert fake == "+7 000 001-23-45"
+    assert is_own_artifact(fake)

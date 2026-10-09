@@ -13,9 +13,6 @@ ORG_GENERIC = frozenset({
     "сервис", "сервисы", "центр", "холдинг", "корпорация", "страховая",
 })
 
-# форма после названия: "Василек Технологии, ЗАО" (hh.ru); без ИП, "банк", "фонд"
-ORG_FORM_TRAILING = r"(?:АО|ОАО|ЗАО|ПАО|НАО|ООО|НКО|АНО|ФГУП|ГУП|МУП|ФГБУ)"
-
 # УИД договора (758-П). В PDF он рвется по дефису - допускаем один перенос строки.
 WRAP = r"[ \t]*\n?[ \t]*"
 
@@ -24,12 +21,6 @@ WORD_CHAR = r"[^\W_]|-"
 
 SPLIT_LABELS = re.compile(r"[ \t]*(?:/|и)[ \t]*")
 SPLIT_NUMS = re.compile(r"[ \t]*/[ \t]*")
-
-# свои типы, чтобы работали при выключенном REQ
-REQ_TYPE = {"инн": "INN", "огрн": "OGRN", "огрнип": "OGRN", "кпп": "KPP",
-             "бик": "BIK", "окпо": "OKPO"}
-
-REQ_WORD = r"(?:ИНН|ОГРНИП|ОГРН|КПП|БИК|ОКПО|ОКТМО)"
 
 STOP_HOSTS = frozenset({
     "github.com", "gitlab.com", "bitbucket.org", "stackoverflow.com",
@@ -81,3 +72,12 @@ ADDR_TAIL = (
     rf"(?:[,\s]*(?:корп|стр|к|с)\w*\.?{WRAP}\d+[А-Яа-я]?)?"
     rf"(?:[,\s]*кв\w*\.?{WRAP}\d+)?"
 )
+
+
+def prefixes(words, minlen: int = 6) -> dict[str, str]:
+    """Обрезки слов -> полное слово: PDF режет текст по колонке ("КОНСТАНТИНОВИ")."""
+    out: dict[str, str] = {}
+    for w in words:
+        for n in range(minlen, len(w)):
+            out.setdefault(w[:n], w)
+    return out

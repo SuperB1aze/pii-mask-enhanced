@@ -13,14 +13,11 @@ import json
 import logging
 import os
 import re
-import warnings
 
 import httpx
 
-from .recognizers.recognizers import Entity
-
-# pymorphy2 (зависимость natasha) импортирует pkg_resources, setuptools<81 об этом предупреждает
-warnings.filterwarnings("ignore", message="pkg_resources is deprecated", category=UserWarning)
+from .ner import morph
+from .recognizers.entity import Entity
 
 log = logging.getLogger("pii_mask.auditor")
 
@@ -99,19 +96,13 @@ def _chunks(text: str) -> list[str]:
     return parts
 
 
-_morph_vocab = None
-
-
 def _plausible_candidate(etype: str, text: str) -> bool:
     """Отсев мусора аудитора теми же правилами, что и у NER.
 
     1. Родовой термин из STOP_TERMS - не сущность, кто бы его ни предложил.
     2. PERSON обязан содержать слово, похожее на имя: либо словарь знает его как имя/фамилию/отчество, либо не знает вовсе. Фраза, целиком состоящая из известных нарицательных, персоной не является.
     """
-    from .ner.helpers import NAME_GRAMMEMES
-    from .ner.ner import _is_stop_term
-
-    if _is_stop_term(text):
+    if morph.is_stop_term(text):
         return False
     if etype != "PERSON":
         return True
@@ -121,20 +112,13 @@ def _plausible_candidate(etype: str, text: str) -> bool:
     # смысл абзаца. Поэтому мы проверяем структуру по частям: родовой термин хотя бы в одной из этих будет засчитывать всю структуру как список,
     # а не имя. Работает только для PERSON.
     parts = [p.strip() for p in text.split(",")]
-    if len(parts) > 1 and any(_is_stop_term(p) for p in parts):
+    if len(parts) > 1 and any(morph.is_stop_term(p) for p in parts):
         return False
 
-    global _morph_vocab
-    if _morph_vocab is None:
-        from natasha import MorphVocab
-
-        _morph_vocab = MorphVocab()
     for word in re.findall(r"[^\W\d_]{2,}", text, re.UNICODE):
-        parses = _morph_vocab.parse(word.capitalize())
-        known = [p for p in parses if p.is_known]
-        if not known:
-            return True  # слова нет в словаре - может быть редким именем
-        if any(g in NAME_GRAMMEMES for p in known for g in p.tag.grammemes):
+        known = morph.known(word.capitalize())
+        # слова нет в словаре - может быть редким именем
+        if not known or morph.has_name(known):
             return True
     return False
 

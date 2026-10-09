@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import re
 
+from ..detection.ner import morph
 from ..detection.ner.helpers import STOP_TERMS
-from ..detection.ner.ner import NatashaNer, _is_stop_term
-from ..detection.recognizers.recognizers import Entity
+from ..detection.recognizers.entity import Entity
 from ..detection.recognizers.regulars import DATE_AFTER_RE, ORG_FORM_RE
+from ..detection.registry import sources
 
 # окончания, которые срезаем перед поиском косвенных падежей
 _VOWEL_END = "аеёиоуыэюяьй"
@@ -67,9 +68,9 @@ def repeats(text: str, values: set[str], known: list[Entity]) -> list[Entity]:
             if tail_year:
                 start += 2 if text[start + 1: start + 2] == "." else 1
                 out.append(Entity(src.type, text[at:start], at, start, src.key,
-                                  source="repeat"))
+                                  source=sources.REPEAT))
                 continue
-            out.append(Entity(src.type, value, at, start, src.key, source="repeat"))
+            out.append(Entity(src.type, value, at, start, src.key, source=sources.REPEAT))
     return out
 
 
@@ -84,13 +85,13 @@ def person_token_repeats(text: str, known: list[Entity]) -> list[Entity]:
             continue
         for tok in ent.text.replace(",", " ").split():
             tok = tok.strip(".,;:()\"'«»")
-            if len(tok) >= 4 and tok[:1].isupper() and not _is_stop_term(tok):
+            if len(tok) >= 4 and tok[:1].isupper() and not morph.is_stop_term(tok):
                 tokens.add(tok)
     out = []
     for tok in tokens:
         for m in _free_matches(rf"(?<![\w-]){re.escape(tok)}(?![\w-])", text, known):
             out.append(Entity("PERSON", tok, m.start(), m.end(),
-                              tok.lower(), source="person-token"))
+                              tok.lower(), source=sources.PERSON_TOKEN))
     return out
 
 
@@ -103,7 +104,7 @@ def dates_after_docrefs(text: str, known: list[Entity]) -> list[Entity]:
         m = DATE_AFTER_RE.match(text, ent.end)
         if m:
             out.append(Entity("DATE", m.group(1), m.start(1), m.end(1),
-                              m.group(1).lower(), source="docdate"))
+                              m.group(1).lower(), source=sources.DOCDATE))
     return out
 
 
@@ -142,7 +143,7 @@ def org_case_repeats(text: str, known: list[Entity]) -> list[Entity]:
     return out
 
 
-def org_token_repeats(text: str, known: list[Entity], ner: NatashaNer) -> list[Entity]:
+def org_token_repeats(text: str, known: list[Entity]) -> list[Entity]:
     # Слова подтвержденных названий, оставшиеся открытыми в других местах
     tokens: dict[str, Entity] = {}
     for src in known:
@@ -152,7 +153,7 @@ def org_token_repeats(text: str, known: list[Entity], ner: NatashaNer) -> list[E
         words = (re.findall(r"\b[А-ЯЁA-Z]{3,}\b", src.text)
                  + re.findall(r"[А-ЯЁA-Z][\w-]{4,}", src.text))
         for word in words:
-            if word.lower() in STOP_TERMS or ner.known_common_word(word):
+            if word.lower() in STOP_TERMS or morph.is_known_common(word):
                 continue
             tokens.setdefault(word, src)
     out = []
@@ -169,14 +170,14 @@ def org_token_repeats(text: str, known: list[Entity], ner: NatashaNer) -> list[E
     return out
 
 
-def without_geo_persons(candidates: list[Entity], ner: NatashaNer) -> list[Entity]:
+def without_geo_persons(candidates: list[Entity]) -> list[Entity]:
     # Убрать персоны, начатые географическим названием.
     # Пример: "России Б.Н. Ельцина" приняло за фамилию страну, проверка убирает метку
     out = []
     for ent in candidates:
         if ent.type == "PERSON":
             head = ent.text.strip().split()[0] if ent.text.strip() else ""
-            if head and ner.is_geography(head):
+            if head and morph.is_geography(head):
                 continue
         out.append(ent)
     return out

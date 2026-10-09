@@ -157,3 +157,11 @@ def test_presets_command_lists_the_sets(tmp_path):
     assert proc.returncode == 0
     assert "resume" in proc.stdout and "accounting" in proc.stdout
     assert "PERSON" in proc.stdout
+
+
+def test_unknown_type_fails_loudly(tmp_path):
+    src = tmp_path / "док.md"
+    src.write_text("ИНН 6083778353", encoding="utf-8")
+    proc = run(["mask", str(src), "--types", "INNN"], tmp_path)
+    assert proc.returncode == 2
+    assert "INNN" in proc.stderr

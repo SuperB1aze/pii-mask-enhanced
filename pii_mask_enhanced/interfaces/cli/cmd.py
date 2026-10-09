@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 
 from ...detection import presets
-from ...engine.core import DEFAULT_TYPES, Masker
+from ...engine.core import Masker
+from ...engine.settings import Options, build_masker, type_names
 from ...formats import xlsx
 from .file_ops import FileOperations as ops
 
@@ -120,21 +121,6 @@ class CMD:
     @staticmethod
     def _build_masker(args: argparse.Namespace, probe) -> tuple[Masker, tuple[str, ...]]:
         # Настройки Masker из флагов и пресета. probe() - текст документа или None.
-        def split(value: str) -> tuple[str, ...]:
-            return tuple(x.strip().upper() for x in value.split(","))
-
-        preset = None
-        if getattr(args, "preset", None):
-            try:
-                preset, why = presets.resolve(args.preset,
-                                              probe() if args.preset == presets.AUTO else None)
-            except ValueError as exc:
-                raise CliError(str(exc)) from exc
-            print(why, file=sys.stderr)
-
-        types = split(args.types) if args.types else preset.types if preset else DEFAULT_TYPES
-        ner_types = split(args.ner_types) if getattr(args, "ner_types", None) else None
-
         org_names = ()
         if getattr(args, "org_dict", None):
             from ...detection.recognizers.recognizers import load_org_dict
@@ -145,29 +131,25 @@ class CMD:
             lines = Path(args.supported_names).read_text(encoding="utf-8").splitlines()
             supported_names = tuple(line.strip() for line in lines if line.strip())
 
-        # флаг поверх набора добавляет строгость
-        needs_form = getattr(args, "ner_org_needs_form", False) or bool(preset and preset.ner_org_needs_form)
-        person_needs_fio = getattr(args, "ner_person_needs_fio", False) or bool(preset and preset.ner_person_needs_fio)
-        inn_needs_label = getattr(args, "inn_needs_label", False) or bool(preset and preset.inn_needs_label)
-
-        if needs_form and getattr(args, "auto_profile", False):
-            # для 1С
-            from ...detection import profile
-
-            text = probe()
-            if text is None:
-                print("профиль: определить не удалось, остаюсь в строгом режиме", file=sys.stderr)
-            else:
-                print(profile.describe(text), file=sys.stderr)
-                if profile.looks_like_resume(text):
-                    needs_form = False
-
-        masker = Masker(types=types, ner=not args.no_ner, org_names=org_names,
-                        ner_types=ner_types,
-                        ner_org_needs_form=needs_form,
-                        ner_person_needs_fio=person_needs_fio,
-                        supported_names=supported_names,
-                        inn_needs_label=inn_needs_label)
+        ner_types = getattr(args, "ner_types", None)
+        opts = Options(
+            preset=getattr(args, "preset", None),
+            types=type_names(args.types.split(",") if args.types else None),
+            ner=not args.no_ner,
+            ner_types=type_names(ner_types.split(",") if ner_types else None),
+            ner_org_needs_form=getattr(args, "ner_org_needs_form", False),
+            ner_person_needs_fio=getattr(args, "ner_person_needs_fio", False),
+            inn_needs_label=getattr(args, "inn_needs_label", False),
+            auto_profile=getattr(args, "auto_profile", False),
+            org_names=org_names,
+            supported_names=supported_names,
+        )
+        try:
+            masker, notes = build_masker(opts, probe)
+        except ValueError as exc:
+            raise CliError(str(exc)) from exc
+        for note in notes:
+            print(note, file=sys.stderr)
         return masker, org_names
 
     @staticmethod

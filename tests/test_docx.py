@@ -283,3 +283,18 @@ def test_document_properties_are_cleared(tmp_path):
     body = _masked_body(tmp_path, [_para(["Товар"])], ("PERSON",), extra, "docProps/app.xml")
     assert "Ромашка" not in body and "Соколова" not in body
     assert "<Pages>1</Pages>" in body
+
+
+def test_strict_inn_masks_labelled_table_cell(tmp_path):
+    """Подпись "ИНН" в соседней ячейке таблицы, как в xlsx: строгий режим не теряет номер."""
+    from pii_mask_enhanced.engine.core import Masker
+
+    cell = "<w:tc>{}</w:tc>"
+    table = ("<w:tbl><w:tr>" + cell.format(_para(["ИНН"])) + cell.format(_para(["6083778353"]))
+             + "</w:tr></w:tbl>")
+    src = _docx(tmp_path / "t.docx", [table, _para(["1063391630"])])
+    dst = tmp_path / "o.docx"
+    docx.mask_document(src, dst, Masker(types=("INN",), inn_needs_label=True))
+    out = docx.paragraph_texts(dst)
+    assert "6083778353" not in out, "ИНН рядом с подписью утек"
+    assert "1063391630" in out, "одинокий номер без подписи маскировать не надо"

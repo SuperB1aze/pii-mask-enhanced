@@ -1,5 +1,7 @@
 import re
 
+from ..registry.entity_types import REQUISITE_WORD
+from ..registry.legal_forms import ORG_FORM, TRAILING_FORM
 from . import helpers
 
 FAKE_PHONE_CODE = "000"
@@ -30,13 +32,6 @@ UID_RE = re.compile(
 UID_LOOSE_RE = re.compile(r"(?<![\w-])[0-9a-f]{8}-[0-9a-f-]{8,48}(?![\w])", re.IGNORECASE)
 
 # Организации
-ORG_FORM = (
-    r"(?:АО|ОАО|ЗАО|ПАО|НАО|ООО|НКО|АНО|ПК|ГК|ФГУП|МУП|ИП"
-    r"|Акционерное\s+общество|Публичное\s+акционерное\s+общество"
-    r"|Общество\s+с\s+ограниченной\s+ответственностью"
-    r"|Банк|Компания|Бюро|Фонд)"
-)
-
 # для проверки находок NER (Masker.ner_org_needs_form)
 ORG_FORM_RE = re.compile(rf"\b{ORG_FORM}\b", re.IGNORECASE)
 
@@ -46,7 +41,7 @@ ORG_QUOTED_RE = re.compile(
 
 ORG_TRAILING_FORM_RE = re.compile(
     r"(?<![\w-])(?:[А-ЯЁA-Z][\w-]*[ \t]+){0,2}[А-ЯЁA-Z][\w-]*"
-    rf"[ \t]*,[ \t]*{helpers.ORG_FORM_TRAILING}(?![\w-])(?![ \t]+[«\"А-ЯЁA-Z])"
+    rf"[ \t]*,[ \t]*{TRAILING_FORM}(?![\w-])(?![ \t]+[«\"А-ЯЁA-Z])"
 )
 
 # родовое слово + название в кавычках: 'ТРЦ "Ромашка"', 'БЦ "Полевой"'
@@ -64,7 +59,7 @@ ORG_QUOTED_NAME_RE = re.compile(
 
 # Число рядом с подписью, без контрольной суммы. Пары "ИНН/КПП" - в PAIRED_REQUISITE_RE.
 REQUISITE_RE = re.compile(
-    r"(?<![/\w])(ИНН|ОГРНИП|ОГРН|КПП|БИК|ОКПО|ОКТМО|ОКВЭД"
+    rf"(?<![/\w])({REQUISITE_WORD}"
     r"|рег(?:истрационный)?\.?[ \t]*(?:номер|№))"
     r"[ \t]*(?:№|:)?[ \t]*\n?[ \t]*(\d{3,15})(?![ \t]*/[ \t]*\d)",
     re.IGNORECASE,
@@ -72,7 +67,7 @@ REQUISITE_RE = re.compile(
 
 # "ИНН/КПП 6083778353/770101001": подписи и числа сопоставляются по порядку
 PAIRED_REQUISITE_RE = re.compile(
-    rf"({helpers.REQ_WORD}(?:[ \t]*(?:/|и)[ \t]*{helpers.REQ_WORD})+)"
+    rf"({REQUISITE_WORD}(?:[ \t]*(?:/|и)[ \t]*{REQUISITE_WORD})+)"
     rf"[^\d\n]{{0,80}}?"
     rf"(\d{{3,15}}(?:[ \t]*/[ \t]*\d{{0,15}})+)",
     re.IGNORECASE,

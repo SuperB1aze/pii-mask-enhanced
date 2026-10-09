@@ -33,3 +33,19 @@ def test_audit_fail_closed(monkeypatch):
     monkeypatch.setattr(auditor, "ollama_alive", lambda *a, **k: False)
     r = client.post("/mask", json={"text": "Иван Петров", "audit": True})
     assert r.status_code == 503
+
+
+def test_preset_works_over_http():
+    """Набор знает сервис: через API тот же документ маскируется так же, как через CLI."""
+    src = "Артикул 1063391630, поставщик ИНН 6083778353"
+    plain = client.post("/mask", json={"text": src, "ner": False}).json()["masked_text"]
+    strict = client.post("/mask", json={"text": src, "ner": False,
+                                        "preset": "accounting"}).json()["masked_text"]
+    assert "1063391630" not in plain
+    assert "1063391630" in strict, "в наборе артикул без подписи ИНН не маскируется"
+    assert "6083778353" not in strict
+
+
+def test_unknown_type_and_preset_are_rejected():
+    assert client.post("/mask", json={"text": "x", "types": ["INNN"]}).status_code == 400
+    assert client.post("/mask", json={"text": "x", "preset": "нет"}).status_code == 400

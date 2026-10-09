@@ -401,6 +401,13 @@ def test_org_form_with_quotes():
     assert [e.text for e in ents] == ["АО «АЛЬФА-ПРИМЕР»"]
 
 
+@pytest.mark.parametrize("form", ["ФГБУ", "ГУП"])
+def test_org_form_list_is_shared(form):
+    """Формы, которые знала только книга Excel, работают и в тексте."""
+    ents = types_of(f"заказчик {form} «Ромашка» по договору", "ORG")
+    assert [e.text for e in ents] == [f"{form} «Ромашка»"]
+
+
 def test_org_full_form_with_quotes():
     src = "Акционерное общество «Национальное бюро примеров» (ИНН"
     ents = types_of(src, "ORG")
