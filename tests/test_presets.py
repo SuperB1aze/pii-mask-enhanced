@@ -1,7 +1,7 @@
 """Именованные наборы типов: что считать ПД, знает сервис, а не вызывающий.
 
 Набор подбирался месяц по живым файлам и жил константами в телеграм-боте.
-Второй потребитель услуги подбирал бы те же шестнадцать типов и четыре флага
+Второй потребитель услуги подбирал бы те же девятнадцать типов и четыре флага
 заново - и получил бы другой результат на том же документе, причем молча: оба
 прогона отвечают кодом 0.
 
@@ -39,6 +39,26 @@ def test_two_presets_are_offered():
 def test_resume_and_accounting_share_the_type_list():
     """Разводить списки значит платить утечкой за аккуратность."""
     assert presets.get("resume").types == presets.get("accounting").types
+
+
+@pytest.mark.parametrize("etype", ["CARD", "SNILS", "PASSPORT"])
+def test_presets_cover_personal_documents(etype):
+    """Карта, СНИЛС и паспорт - прямые идентификаторы, с набором их не теряем."""
+    assert etype in presets.get("accounting").types
+
+
+def test_presets_keep_req_off():
+    """REQ в КУДиР - номер первичного документа, а не ПД."""
+    assert "REQ" not in presets.get("accounting").types
+
+
+def test_preset_masks_card_snils_and_passport(tmp_path):
+    src = ("Карта 4276 3800 1234 5679, СНИЛС 112-233-445 95, "
+           "паспорт 4510 123456\n")
+    masked, _ = mask_with(tmp_path, src, ["--preset", "accounting"])
+    assert "4276 3800 1234 5679" not in masked
+    assert "112-233-445 95" not in masked
+    assert "4510 123456" not in masked
 
 
 def test_presets_differ_in_strictness_to_organisations():

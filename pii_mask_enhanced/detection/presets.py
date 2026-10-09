@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# REQ ("реквизит документа") из DEFAULT_TYPES исключен
+# REQ ("реквизит документа") исключен
 TYPES = (
     "PERSON", "ORG", "INN", "OGRN", "KPP", "BIK", "ACCOUNT", "PHONE", "EMAIL",
     "ADDRESS", "DOCREF", "DATE", "CERT", "UID", "TG", "URL",
+    "CARD", "SNILS", "PASSPORT",
 )
 
 # человека от NER принимаем, только если спан похож на ФИО
