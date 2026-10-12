@@ -1,3 +1,18 @@
+# Платежные системы: диапазон начала номера (одной разрядности) и допустимые длины.
+# 13 цифр нет намеренно: так выглядят штрихкоды EAN-13 (российские - на 46) и ОГРН.
+CARD_SCHEMES = (
+    ((2200, 2204), (16, 17, 18, 19)),   # Мир
+    ((4, 4), (16, 19)),                 # Visa
+    ((51, 55), (16,)),                  # Mastercard
+    ((2221, 2720), (16,)),              # Mastercard, новый диапазон
+    ((50, 50), (16, 17, 18, 19)),       # Maestro
+    ((56, 69), (16, 17, 18, 19)),       # Maestro, UnionPay (62), Discover (6011, 65)
+    ((34, 34), (15,)),                  # American Express
+    ((37, 37), (15,)),                  # American Express
+    ((3528, 3589), (16, 17, 18, 19)),   # JCB
+)
+
+
 class Validator:
     @staticmethod
     def luhn_ok(num: str) -> bool:
@@ -10,6 +25,14 @@ class Validator:
                     d -= 9
             total += d
         return total % 10 == 0
+
+    @staticmethod
+    def card_ok(num: str) -> bool:
+        # Луна сходится у каждого десятого числа - начало и длина номера отсекают остальное
+        if not num.isdigit() or not Validator.luhn_ok(num):
+            return False
+        return any(len(num) in lengths and lo <= int(num[:len(str(lo))]) <= hi
+                   for (lo, hi), lengths in CARD_SCHEMES)
 
     @staticmethod
     def inn_ok(num: str) -> bool:

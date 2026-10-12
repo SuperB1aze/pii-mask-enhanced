@@ -151,6 +151,57 @@ def test_card_bad_luhn():
     assert types_of("номер 4111 1111 1111 1112", "CARD") == []
 
 
+def make_card(body: str) -> str:
+    return next(body + d for d in "0123456789" if Validator.luhn_ok(body + d))
+
+
+def grouped(num: str, sizes: list[int]) -> str:
+    out, i = [], 0
+    for size in sizes:
+        out.append(num[i:i + size])
+        i += size
+    return " ".join(out)
+
+
+@pytest.mark.parametrize("raw", [
+    grouped(make_card("427638001234567"), [4, 4, 4, 4]),
+    "-".join(grouped(make_card("427638001234567"), [4, 4, 4, 4]).split()),
+    "  ".join(grouped(make_card("427638001234567"), [4, 4, 4, 4]).split()),
+    grouped(make_card("427638001234567"), [8, 8]),
+    grouped(make_card("220012345678901234"), [4, 4, 4, 4, 3]),     # Мир, 19
+    grouped(make_card("220012345678901234"), [6, 13]),
+    make_card("22001234567890123"),                                # Мир, 18
+    grouped(make_card("37828224631000"), [4, 6, 5]),               # Amex
+    grouped(make_card("222100000000000"), [4, 4, 4, 4]),           # Mastercard 2221
+    grouped(make_card("353011133330000"), [4, 4, 4, 4]),           # JCB
+])
+def test_card_formats_and_schemes(raw):
+    ents = types_of(f"оплата {raw} принята", "CARD")
+    assert [e.text for e in ents] == [raw]
+
+
+@pytest.mark.parametrize("label", ["карта", "номер карты:", "карта Мир", "по карте №", "card"])
+def test_card_bad_luhn_with_label(label):
+    """С подписью номер с опечаткой в сумме - все равно карта."""
+    ents = types_of(f"{label} 4111 1111 1111 1112", "CARD")
+    assert [e.text for e in ents] == ["4111 1111 1111 1112"]
+
+
+@pytest.mark.parametrize("src", [
+    "штрихкод: 4607001234566",                                    # EAN-13
+    "ОГРН 1027700132195",
+    "ОГРНИП 304500116000157",
+    "IMEI 490154203237518",                                       # Луна сходится, BIN чужой
+    "р/с 40817810099910004312",
+    "4081 7810 0999 1000 4312",
+    "полис 7700000000000000",
+    grouped(make_card("123456789012345"), [4, 4, 4, 4]),          # Луна есть, системы нет
+    "итого 1 234 567 890 руб.",
+])
+def test_card_lookalikes_not_cards(src):
+    assert types_of(src, "CARD") == []
+
+
 # --- PASSPORT (только с контекстным словом) ---
 
 def test_passport_with_context():

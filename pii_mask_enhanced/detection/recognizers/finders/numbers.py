@@ -15,7 +15,10 @@ def cards(text: str) -> list[Entity]:
     out = []
     for m in regs.CARD_RE.finditer(text):
         d = digits(m.group())
-        if len(d) == 16 and Validator.luhn_ok(d):
+        # с подписью "карта" номер с опечаткой в сумме - все равно карта
+        labelled = (len(d) in regs.CARD_LENGTHS
+                    and regs.CARD_LABEL_RE.search(text[max(0, m.start() - 40):m.start()]))
+        if labelled or Validator.card_ok(d):
             out.append(Entity("CARD", m.group(), m.start(), m.end(), d))
     return out
 
