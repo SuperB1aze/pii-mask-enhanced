@@ -52,18 +52,13 @@ def test_presets_keep_req_off():
     assert "REQ" not in presets.get("accounting").types
 
 
-def test_preset_masks_card_snils_and_passport(tmp_path):
+def test_preset_masks_personal_documents(tmp_path):
+    """Сквозной путь через CLI: набор не только перечисляет типы, но и маскирует ими."""
     src = ("Карта 4276 3800 1234 5679, СНИЛС 112-233-445 95, "
-           "паспорт 4510 123456\n")
+           "паспорт 4510 123456, ОКПО 12345678\n")
     masked, _ = mask_with(tmp_path, src, ["--preset", "accounting"])
-    assert "4276 3800 1234 5679" not in masked
-    assert "112-233-445 95" not in masked
-    assert "4510 123456" not in masked
-
-
-def test_preset_masks_okpo(tmp_path):
-    masked, _ = mask_with(tmp_path, "ОКПО 12345678\n", ["--preset", "accounting"])
-    assert "12345678" not in masked
+    for value in ("4276 3800 1234 5679", "112-233-445 95", "4510 123456", "12345678"):
+        assert value not in masked, f"набор пропустил {value}"
 
 
 def test_presets_differ_in_strictness_to_organisations():

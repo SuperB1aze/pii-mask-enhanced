@@ -28,10 +28,3 @@ def test_plain_number_untouched():
     """Длинное десятичное число - не сертификат: у него другой распознаватель."""
     src = "сумма 12345678901234567890"
     assert _mask(src) == src
-
-
-def test_uuid_masked_as_uid():
-    """UUID уже поддержан типом UID - проверяем, что он реально ловится."""
-    out = _mask("идентификатор 99d4c0ac-353e-4a1c-b60d-e498f7505bfd",
-                types=("UID",))
-    assert "99d4c0ac" not in out

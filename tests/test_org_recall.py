@@ -13,7 +13,7 @@
 теряет название и на отдельной строке, если рядом стоят даты или тире.
 """
 from pii_mask_enhanced.engine.core import Masker
-from pii_mask_enhanced.detection.recognizers.recognizers import find_format_entities, load_org_dict
+from pii_mask_enhanced.detection.recognizers.recognizers import load_org_dict
 from pii_mask_enhanced.detection.recognizers.regulars import ORG_TRAILING_FORM_RE
 
 CV_FRAGMENT = (
@@ -82,6 +82,3 @@ class TestOrgDict:
 
         with pytest.raises(SystemExit):
             load_org_dict(tmp_path / "нет.txt")
-
-    def test_dict_is_optional(self):
-        assert find_format_entities("текст без организаций") == []

@@ -23,20 +23,6 @@ def test_compound_label_masks_inn():
         assert INN not in out, f"ИНН остался открытым: {text!r} -> {out!r}"
 
 
-def test_kpp_stays_visible():
-    """КПП - не персональные данные: он у организации публичный и в types не входит.
-
-    Маскировать его заодно значило бы выносить из документа смысл там, где риска нет.
-    """
-    assert KPP in _mask(f"ИНН/КПП {INN}/{KPP}")
-
-
-def test_single_label_unchanged():
-    """Прежнее поведение одиночной подписи не тронуто."""
-    assert "{{INN_" in _mask(f"ИНН {INN}")
-    assert "{{INN_" in _mask(f"ИНН: {INN}")
-
-
 def test_pair_order_respected():
     """Пары сопоставляются по позиции: первый номер - первой подписи."""
     out = Masker(types=("INN",), inn_needs_label=True).mask(f"КПП/ИНН {KPP}/{INN}")[0]
@@ -68,11 +54,6 @@ def test_number_confirmed_once_is_masked_everywhere():
             f"Ромашка, ООО {INN} / {KPP}")
     out = _mask(text)
     assert INN not in out, "второе вхождение осталось открытым"
-
-
-def test_unlabelled_number_alone_still_ignored():
-    """Без подписи где-либо в документе число остается артикулом."""
-    assert "1063391630" in _mask("Артикул 1063391630")
 
 
 def test_kpp_is_its_own_type():

@@ -308,45 +308,40 @@ def test_supported_names_scans_legal_form_cells(tmp_path):
     assert "аквабрис" not in names
 
 
-def test_number_next_to_label_is_trusted(tmp_path):
+def _grid_book(path, cells: dict[str, str]):
+    """Книга с текстом по координатам: {"A9": "ИНН", "B9": "6083778353"}."""
+    sst = ('<?xml version="1.0"?><sst>'
+           + "".join(f"<si><t>{text}</t></si>" for text in cells.values()) + "</sst>")
+    rows: dict[int, str] = {}
+    for i, ref in enumerate(cells):
+        row = int("".join(c for c in ref if c.isdigit()))
+        rows[row] = rows.get(row, "") + f'<c r="{ref}" t="s"><v>{i}</v></c>'
+    sheet = ('<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/'
+             'spreadsheetml/2006/main"><sheetData>'
+             + "".join(f'<row r="{r}">{c}</row>' for r, c in sorted(rows.items()))
+             + "</sheetData></worksheet>")
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", CONTENT_TYPES)
+        z.writestr("xl/sharedStrings.xml", sst)
+        z.writestr("xl/worksheets/sheet1.xml", sheet)
+    return path
+
+
+def test_strict_inn_masks_labelled_neighbour(tmp_path):
     """Подпись реквизита стоит в СОСЕДНЕЙ ячейке, а не в той же.
 
     В боевом отчете это A9='ИНН', B9='6083778353'. Маскировка идет по одной
     ячейке и соседей не видит, поэтому строгий режим пропускал настоящий ИНН,
     отсеивая заодно и артикулы. Смотреть надо на таблицу.
     """
-    path = tmp_path / "req.xlsx"
-    sst = ('<?xml version="1.0"?><sst><si><t>ИНН</t></si><si><t>6083778353</t></si>'
-           '<si><t>1063391630</t></si></sst>')
-    sheet = ('<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/'
-             'spreadsheetml/2006/main"><sheetData>'
-             '<row r="9"><c r="A9" t="s"><v>0</v></c><c r="B9" t="s"><v>1</v></c></row>'
-             '<row r="20"><c r="C20" t="s"><v>2</v></c></row>'
-             '</sheetData></worksheet>')
-    with zipfile.ZipFile(path, "w") as z:
-        z.writestr("[Content_Types].xml", CONTENT_TYPES)
-        z.writestr("xl/sharedStrings.xml", sst)
-        z.writestr("xl/worksheets/sheet1.xml", sheet)
-    trusted = xlsx.labelled_numbers(path)
-    assert "6083778353" in trusted, "ИНН рядом с подписью должен быть доверенным"
-    assert "1063391630" not in trusted, "одинокий артикул подписи не имеет"
-
-
-def test_strict_inn_masks_labelled_neighbour(tmp_path):
     from pii_mask_enhanced.engine.core import Masker
 
-    path = tmp_path / "req2.xlsx"
-    sst = ('<?xml version="1.0"?><sst><si><t>ИНН</t></si><si><t>6083778353</t></si>'
-           '<si><t>1063391630</t></si></sst>')
-    sheet = ('<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/'
-             'spreadsheetml/2006/main"><sheetData>'
-             '<row r="9"><c r="A9" t="s"><v>0</v></c><c r="B9" t="s"><v>1</v></c></row>'
-             '<row r="20"><c r="C20" t="s"><v>2</v></c></row>'
-             '</sheetData></worksheet>')
-    with zipfile.ZipFile(path, "w") as z:
-        z.writestr("[Content_Types].xml", CONTENT_TYPES)
-        z.writestr("xl/sharedStrings.xml", sst)
-        z.writestr("xl/worksheets/sheet1.xml", sheet)
+    path = _grid_book(tmp_path / "req.xlsx",
+                      {"A9": "ИНН", "B9": "6083778353", "C20": "1063391630"})
+    labelled = xlsx.labelled_numbers(path)
+    assert "6083778353" in labelled, "ИНН рядом с подписью должен быть доверенным"
+    assert "1063391630" not in labelled, "одинокий артикул подписи не имеет"
+
     dst = tmp_path / "o.xlsx"
     masker = Masker(types=("INN",), inn_needs_label=True)
     xlsx.mask_workbook(path, dst, masker)
@@ -366,19 +361,11 @@ def test_requisites_next_to_label_cell_masked(tmp_path):
     from pii_mask_enhanced.detection import presets
     from pii_mask_enhanced.engine.core import Masker
 
-    path = tmp_path / "req3.xlsx"
     pairs = [("Р/с", "40817810099910004312"), ("КПП", "770101001"), ("БИК", "044525225")]
-    sst = ('<?xml version="1.0"?><sst>'
-           + "".join(f"<si><t>{s}</t></si>" for p in pairs for s in p) + "</sst>")
-    rows = "".join(f'<row r="{i + 1}"><c r="A{i + 1}" t="s"><v>{2 * i}</v></c>'
-                   f'<c r="B{i + 1}" t="s"><v>{2 * i + 1}</v></c></row>'
-                   for i in range(len(pairs)))
-    sheet = ('<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/'
-             f'spreadsheetml/2006/main"><sheetData>{rows}</sheetData></worksheet>')
-    with zipfile.ZipFile(path, "w") as z:
-        z.writestr("[Content_Types].xml", CONTENT_TYPES)
-        z.writestr("xl/sharedStrings.xml", sst)
-        z.writestr("xl/worksheets/sheet1.xml", sheet)
+    cells = {}
+    for row, (label, number) in enumerate(pairs, 1):
+        cells[f"A{row}"], cells[f"B{row}"] = label, number
+    path = _grid_book(tmp_path / "req3.xlsx", cells)
     dst = tmp_path / "o3.xlsx"
     xlsx.mask_workbook(path, dst, Masker(types=presets.get("accounting").types, ner=False))
     out = xlsx.cell_texts(dst)

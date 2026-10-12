@@ -34,18 +34,16 @@ WRAPPERS = [
 
 
 @pytest.mark.parametrize("wrapper", WRAPPERS)
-def test_name_masked_inside_markup(wrapper):
-    src = wrapper.format(n=NAME)
-    masked, mapping = Masker().mask(src)
-    assert "Смирнов" not in masked, f"имя утекло из {wrapper!r}: {masked!r}"
-    assert "{{PERSON_1}}" in masked
+def test_name_masked_and_markup_survives(wrapper):
+    """Имя уходит под маску, а сама разметка остается - документ должен остаться документом.
 
-
-@pytest.mark.parametrize("wrapper", WRAPPERS)
-def test_markup_itself_survives(wrapper):
-    """Маскировка не имеет права съесть саму разметку - документ должен остаться документом."""
+    Проверки идут вместе: сравнение формы в одиночку проходит и тогда, когда
+    маскировка не сработала вовсе - заменять в тексте нечего, и он равен исходному.
+    """
     src = wrapper.format(n=NAME)
     masked, _ = Masker().mask(src)
+    assert "Смирнов" not in masked, f"имя утекло из {wrapper!r}: {masked!r}"
+    assert "{{PERSON_1}}" in masked
     restored_shape = masked.replace("{{PERSON_1}}", NAME)
     assert restored_shape == src, f"разметка поехала: {src!r} -> {masked!r}"
 
@@ -67,6 +65,5 @@ def test_offsets_stay_aligned_in_mixed_document():
 def test_caps_name_without_patronymic():
     """Регулярка держится на отчестве; пара слов капсом без него - работа NER
     по нормализованному регистру."""
-    from pii_mask_enhanced.engine.core import Masker
     masked, _ = Masker().mask("в выборке ВЕРШКОВА ГАЛИНА указана дважды")
-    assert "ВЕРШКОВА" not in masked and "РАИСА" not in masked
+    assert "ВЕРШКОВА" not in masked and "ГАЛИНА" not in masked

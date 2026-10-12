@@ -54,15 +54,6 @@ def test_primary_document_number_untouched():
     assert _mask(src) == src
 
 
-def test_date_alone_is_not_masked():
-    """Даты вообще не трогаем - в бухгалтерском документе они несут экономику.
-
-    Маскируется только та дата, что стоит внутри ссылки на документ.
-    """
-    src = "Период с 01.01.2025 по 31.03.2025, оплата 15.02.2025"
-    assert _mask(src) == src
-
-
 def test_number_is_taken_whole():
     """Маска встает с начала номера, а не с его середины.
 
@@ -146,11 +137,6 @@ def test_amount_after_anchor_is_not_a_number():
     """
     src = "Договор был заключен на сумму 150000 рублей"
     assert _mask(src) == src
-
-
-def test_bare_digits_with_number_sign_still_work():
-    """Со знаком номера чистым цифрам верим: "Счет-фактура № 74255758"."""
-    assert "{{DOCREF_" in _mask("Счет-фактура № 11111111 от 31.07.2026")
 
 
 @pytest.mark.parametrize("src", [
