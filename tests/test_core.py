@@ -25,6 +25,12 @@ def test_same_entity_same_label():
     assert len(phones) == 1
 
 
+def test_labelled_snils_spreads_to_bare_repeat():
+    # слитный СНИЛС без подписи не ловится, но после подписанного - скрывается везде
+    masked, _ = Masker().mask("СНИЛС 11223344595. Повторно: 11223344595")
+    assert "11223344595" not in masked
+
+
 def test_person_inflections_one_label():
     # Natasha: "Иван Петров" и "Ивана Петрова" - одна персона, одна метка
     m = Masker()

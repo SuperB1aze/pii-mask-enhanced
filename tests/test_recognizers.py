@@ -34,6 +34,10 @@ def make_snils(base9: str) -> str:
     return f"{base9[0:3]}-{base9[3:6]}-{base9[6:9]} {chk:02d}"
 
 
+def digits_only(s: str) -> str:
+    return "".join(c for c in s if c.isdigit())
+
+
 # --- PHONE ---
 
 @pytest.mark.parametrize("raw", [
@@ -101,7 +105,39 @@ def test_snils_valid():
 def test_snils_bad_checksum():
     sn = make_snils("112233445")
     bad = sn[:-2] + f"{(int(sn[-2:]) + 1) % 100:02d}"
+    assert types_of(f"номер {bad}", "SNILS") == []
+
+
+def test_snils_bad_checksum_with_label_masked_whole():
+    # с подписью номер скрываем целиком, а не одну первую группу цифр
+    sn = make_snils("112233445")
+    bad = sn[:-2] + f"{(int(sn[-2:]) + 1) % 100:02d}"
+    ents = types_of(f"СНИЛС: {bad}", "SNILS")
+    assert [e.text for e in ents] == [bad]
+
+
+@pytest.mark.parametrize("label", ["СНИЛС", "СНИЛС:", "СНИЛС №", "снилс"])
+def test_snils_bare_with_label(label):
+    sn = digits_only(make_snils("112233445"))
+    ents = types_of(f"{label} {sn}", "SNILS")
+    assert [e.text for e in ents] == [sn]
+
+
+def test_snils_bare_without_label_skipped():
+    sn = digits_only(make_snils("112233445"))
+    assert types_of(f"номер {sn}", "SNILS") == []
+
+
+def test_snils_bare_bad_checksum_with_label_not_snils():
+    # слитный номер с неверной суммой у подписи - общий реквизит, но не СНИЛС
+    sn = digits_only(make_snils("112233445"))
+    bad = sn[:-1] + str((int(sn[-1]) + 1) % 10)
     assert types_of(f"СНИЛС {bad}", "SNILS") == []
+    assert [e.text for e in types_of(f"СНИЛС {bad}", "REQ")] == [bad]
+
+
+def test_snils_bare_phone_not_snils():
+    assert types_of("тел. 89161234567", "SNILS") == []
 
 
 # --- CARD (Луна) ---

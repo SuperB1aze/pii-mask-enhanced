@@ -24,7 +24,11 @@ def snils(text: str) -> list[Entity]:
     out = []
     for m in regs.SNILS_RE.finditer(text):
         d = digits(m.group())
-        if Validator.snils_ok(d):
+        if regs.SNILS_LABEL_RE.search(text[max(0, m.start() - 20):m.start()]):
+            # source=REQUISITE: подписанный номер скрывается и в других местах текста
+            out.append(Entity("SNILS", m.group(), m.start(), m.end(), d,
+                              source=sources.REQUISITE))
+        elif Validator.snils_ok(d):
             out.append(Entity("SNILS", m.group(), m.start(), m.end(), d))
     return out
 
