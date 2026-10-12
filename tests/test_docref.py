@@ -10,6 +10,8 @@
 
 Номера в тестах выдуманные: репозиторий публичный.
 """
+import pytest
+
 from pii_mask_enhanced.engine.core import Masker
 
 
@@ -149,3 +151,60 @@ def test_amount_after_anchor_is_not_a_number():
 def test_bare_digits_with_number_sign_still_work():
     """Со знаком номера чистым цифрам верим: "Счет-фактура № 74255758"."""
     assert "{{DOCREF_" in _mask("Счет-фактура № 11111111 от 31.07.2026")
+
+
+@pytest.mark.parametrize("src", [
+    "ДБО № 11111/ФЛ от 01.02.2020",
+    "по ДБО №11111 от 01.02.2020",
+    "ДБО 11111/ФЛ",
+])
+def test_dbo_is_anchor(src):
+    """ДБО - договор банковского обслуживания, номер и дата за ним скрываются."""
+    out = _mask(src)
+    assert "11111" not in out and "01.02.2020" not in out
+    assert "ДБО" in out
+
+
+def test_dbo_inside_word_is_not_anchor():
+    src = "подборка № 5"
+    assert _mask(src) == src
+
+
+@pytest.mark.parametrize("num", [
+    "11111/ФЛ", "11111-ЮЛ", "ФЛ/11111", "11111/ИП/2020", "625/0000-0111111/ЮЛ",
+])
+def test_client_suffix_number_without_anchor(num):
+    """Суффикс типа клиента сам выдает номер договора - подпись рядом не нужна."""
+    out = _mask(f"номер {num}. Повторно: {num}")
+    assert num not in out
+    assert out.count("{{DOCREF_1}}") == 2
+
+
+def test_client_suffix_masked_whole():
+    """Суффикс через пробел не остается огрызком за меткой."""
+    out = _mask("Договор № 11111 / ФЛ от 01.02.2020")
+    assert out == "Договор № {{DOCREF_1}} от {{DATE_1}}"
+
+
+def test_client_suffix_spaced_and_solid_one_label():
+    out = _mask("номер 11111 / ФЛ, он же 11111/ФЛ")
+    assert out == "номер {{DOCREF_1}}, он же {{DOCREF_1}}"
+
+
+@pytest.mark.parametrize("src", [
+    "Федеральный закон № 152-ФЗ",
+    "справка 2-НДФЛ и 3-НДФЛ",
+    "форма 1-ИП",
+    "клиентов: ФЛ - 120, ЮЛ - 35",
+    "тарифы для ФЛ/ЮЛ/ИП",
+    "тарифы для фл/юл",
+])
+def test_client_suffix_lookalikes_untouched(src):
+    """Законы, формы отчетности и статистика по типам клиентов - не номера."""
+    assert _mask(src) == src
+
+
+def test_dbo_and_suffix_masked_by_default():
+    """Без набора DOCREF выключен - номер ДБО все равно скрывается, как общий REQ."""
+    out = Masker(ner=False).mask("ДБО № 11111 от 01.02.2020, номер 22222/ФЛ")[0]
+    assert "11111" not in out and "22222/ФЛ" not in out

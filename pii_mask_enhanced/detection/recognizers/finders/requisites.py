@@ -25,6 +25,27 @@ def docrefs(text: str) -> list[Entity]:
     return out
 
 
+def client_docnums(text: str) -> list[Entity]:
+    """Номер с суффиксом типа клиента ("12345/ФЛ") - номер договора и без подписи.
+
+    Суффикс входит в маску: "Договор № 12345 / ФЛ" не оставляет "/ ФЛ" открытым.
+    DOCREF - для наборов, REQ - для маскировки по умолчанию (DOCREF в ней выключен).
+    """
+    out = []
+    for m in regs.DOC_SEGMENTS_RE.finditer(text):
+        num = m.group()
+        segments = regs.DOC_SEGMENT_SEP_RE.split(num)
+        if not helpers.CLIENT_SUFFIXES & set(segments):
+            continue
+        if sum(c.isdigit() for c in num) < helpers.CLIENT_DOCNUM_MIN_DIGITS:
+            continue
+        # "12345 / ФЛ" и "12345/ФЛ" - один номер, одна метка
+        key = "".join(num.split()).lower()
+        out.append(Entity("DOCREF", num, m.start(), m.end(), key, source=sources.DOCREF))
+        out.append(Entity("REQ", num, m.start(), m.end(), key))
+    return out
+
+
 def paired(text: str) -> list[Entity]:
     """Пары "ИНН/КПП 6083778353/770101001": подписи и числа сопоставляются по порядку."""
     out = []

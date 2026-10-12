@@ -86,6 +86,12 @@ DOCREF_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Номер из сегментов через "/" или "-": "12345/ФЛ", "ФЛ-12345", "625/0000-0123456 / ЮЛ"
+DOC_SEGMENTS_RE = re.compile(
+    r"(?<![\w./-])\w+(?:\.\w+)*(?:(?:-|[ \t]?/[ \t]?)\w+(?:\.\w+)*)+(?![\w/-])"
+)
+DOC_SEGMENT_SEP_RE = re.compile(r"[ \t]?[/-][ \t]?")
+
 # серийный номер сертификата ЭП
 CERT_RE = re.compile(r"(?<![0-9A-Za-z])[0-9A-Fa-f]{16,64}(?![0-9A-Za-z])")
 
@@ -167,7 +173,7 @@ ADDRESS_INDEX_RE = re.compile(
 DOC_REQUISITE_RES = (
     # "серия 77 № 007893219"
     re.compile(r"сери[яи][ \t\n]*(\d{2,4})[ \t\n]*№?[ \t\n]*(\d{5,9})", re.IGNORECASE),
-    re.compile(r"договор\w*[^№]{0,130}№[ \t]*([\w/\-.]+)", re.IGNORECASE),
+    re.compile(r"(?:договор\w*|(?<!\w)ДБО)[^№]{0,130}№[ \t]*([\w/\-.]+)", re.IGNORECASE),
     re.compile(r"соглашени\w*[^№]{0,130}№[ \t]*([\w/\-.]+)", re.IGNORECASE),
     re.compile(r"(?:лицензи\w+|свидетельств\w+)[^№]{0,120}№[ \t]*(\d[\d-]{2,20})", re.IGNORECASE),
     re.compile(r"регистрационный[ \t\n]+номер[^:]{0,90}:[ \t\n]*(\d{3,15})", re.IGNORECASE),

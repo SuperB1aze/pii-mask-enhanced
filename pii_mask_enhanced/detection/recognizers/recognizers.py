@@ -23,6 +23,7 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
         *numbers.inns(text),
         *numbers.certs(text),
         *requisites.docrefs(text),
+        *requisites.client_docnums(text),
         *requisites.paired(text),
         *requisites.labelled(text),
         *requisites.accounts(text),
