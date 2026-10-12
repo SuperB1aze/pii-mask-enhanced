@@ -5,7 +5,7 @@ from ...registry import sources
 from ...registry.entity_types import requisite_type
 from .. import helpers
 from .. import regulars as regs
-from ..entity import Entity
+from ..entity import Entity, digits
 
 
 def docrefs(text: str) -> list[Entity]:
@@ -72,7 +72,8 @@ def labelled(text: str) -> list[Entity]:
 
 
 def accounts(text: str) -> list[Entity]:
-    return [Entity("ACCOUNT", m.group(2), m.start(2), m.end(2), m.group(2),
+    # ключ - цифры: слитный и разбитый на группы номер получают одну метку
+    return [Entity("ACCOUNT", m.group(2), m.start(2), m.end(2), digits(m.group(2)),
                    source=sources.REQUISITE)
             for m in regs.ACCOUNT_RE.finditer(text)]
 

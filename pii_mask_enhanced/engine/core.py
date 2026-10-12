@@ -17,7 +17,7 @@ import re
 
 from ..detection.ner import morph
 from ..detection.ner.ner import NatashaNer
-from ..detection.recognizers.entity import Entity
+from ..detection.recognizers.entity import Entity, digits
 from ..detection.recognizers.finders.spans import overlaps
 from ..detection.recognizers.recognizers import find_format_entities
 from ..detection.recognizers.regulars import ORG_FORM_RE
@@ -72,6 +72,8 @@ class Masker:
         self.inn_needs_label = inn_needs_label
         # Числа, у которых подпись реквизита стоит в соседней ячейке таблицы.
         self.trusted_numbers = frozenset(trusted_numbers)
+        # Те же числа с типом по подписи: ячейка "40817..." рядом с "Р/с" - ACCOUNT
+        self.labelled_cells: dict[str, str] = {}
         # типы, которые принимаем от NER
         self._ner_allowed = self.types if self.ner_types is None else self.types & self.ner_types
         self._use_ner = ner and bool({"PERSON", "ORG", "LOC"} & self._ner_allowed)
@@ -96,13 +98,17 @@ class Masker:
             return True
         return ent.source != sources.BARE or ent.text.strip() in self.trusted_numbers
 
-    def with_hints(self, supported_names: frozenset[str], trusted_numbers: frozenset[str]) -> Masker:
-        """Копия с подсказками документа для строгого режима; заданные явно не заменяются."""
+    def with_hints(self, supported_names: frozenset[str], labelled: dict[str, str]) -> Masker:
+        """Копия с подсказками документа; заданные явно не заменяются.
+
+        labelled - числа с подписью в соседней ячейке и их тип (office_xml.cell_label_type).
+        """
         clone = copy.copy(self)
         if self.ner_person_needs_fio and not self.supported_names:
             clone.supported_names = supported_names
         if self.inn_needs_label and not self.trusted_numbers:
-            clone.trusted_numbers = trusted_numbers
+            clone.trusted_numbers = frozenset(labelled)
+        clone.labelled_cells = dict(labelled)
         return clone
 
     def _supported(self, ent: Entity) -> bool:
@@ -141,6 +147,13 @@ class Masker:
         candidates = [
             e for e in find_format_entities(text, self.org_names) if e.type in self.types
         ]
+        # Ячейка - число, подписанное соседней ячейкой: сама она подписи не содержит
+        cell = text.strip()
+        cell_type = self.labelled_cells.get(cell)
+        if cell_type in self.types:
+            start = text.index(cell)
+            candidates.append(Entity(cell_type, cell, start, start + len(cell), digits(cell),
+                                     source=sources.REQUISITE))
         if self._use_ner:
             candidates += [e for e in NatashaNer.shared().extract(text)
                            if e.type in self._ner_allowed and self._ner_org_ok(e)]

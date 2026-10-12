@@ -357,6 +357,36 @@ def test_strict_inn_masks_labelled_neighbour(tmp_path):
     assert masker.trusted_numbers == frozenset()
 
 
+def test_requisites_next_to_label_cell_masked(tmp_path):
+    """Счет, КПП и БИК без подписи в своей ячейке - подпись в соседней.
+
+    Ячейка маскируется отдельно и подписи не видит: "Р/с" | "40817..." уходил
+    открытым, хотя тот же счет в одной строке с подписью скрывался.
+    """
+    from pii_mask_enhanced.detection import presets
+    from pii_mask_enhanced.engine.core import Masker
+
+    path = tmp_path / "req3.xlsx"
+    pairs = [("Р/с", "40817810099910004312"), ("КПП", "770101001"), ("БИК", "044525225")]
+    sst = ('<?xml version="1.0"?><sst>'
+           + "".join(f"<si><t>{s}</t></si>" for p in pairs for s in p) + "</sst>")
+    rows = "".join(f'<row r="{i + 1}"><c r="A{i + 1}" t="s"><v>{2 * i}</v></c>'
+                   f'<c r="B{i + 1}" t="s"><v>{2 * i + 1}</v></c></row>'
+                   for i in range(len(pairs)))
+    sheet = ('<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/'
+             f'spreadsheetml/2006/main"><sheetData>{rows}</sheetData></worksheet>')
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", CONTENT_TYPES)
+        z.writestr("xl/sharedStrings.xml", sst)
+        z.writestr("xl/worksheets/sheet1.xml", sheet)
+    dst = tmp_path / "o3.xlsx"
+    xlsx.mask_workbook(path, dst, Masker(types=presets.get("accounting").types, ner=False))
+    out = xlsx.cell_texts(dst)
+    for _, number in pairs:
+        assert number not in out, f"реквизит у подписи в соседней ячейке утек: {number}"
+    assert {"Р/с", "КПП", "БИК"} <= set(out), "подписи маскировать не надо"
+
+
 # --- утечки: текст книги вне ячеек ---
 
 def _with_parts(path, parts: dict[str, str]):

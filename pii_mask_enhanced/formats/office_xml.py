@@ -6,7 +6,9 @@ import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape as _sax_escape
 
-from ..detection.registry.entity_types import REQUISITE_WORD
+from ..detection.recognizers.entity import digits
+from ..detection.recognizers.regulars import ACCOUNT_LABEL_CELL_RE, ACCOUNT_NUM
+from ..detection.registry.entity_types import REQUISITE_WORD, requisite_type
 from ..detection.registry.legal_forms import CELL_FORM
 
 # Ссылки на символы: числовые (`&#10;` - перевод строки в ячейке) и пять именованных из XML.
@@ -30,8 +32,9 @@ _LEGAL_FORM = re.compile(rf"\b{CELL_FORM}\b", re.IGNORECASE)
 _WORD_SPLIT = re.compile(r"[^\w\-]+")
 
 # Подпись реквизита отдельной ячейкой: число рядом с ней считается реквизитом.
-REQ_LABEL_RE = re.compile(rf"^\s*{REQUISITE_WORD}\s*:?\s*$", re.IGNORECASE)
-DIGITS_ONLY_RE = re.compile(r"^\s*\d{5,20}\s*$")
+REQ_LABEL_RE = re.compile(rf"^\s*({REQUISITE_WORD})\s*:?\s*$", re.IGNORECASE)
+# число в ячейке; счет бывает разбит на группы
+NUMBER_CELL_RE = re.compile(rf"^\s*(?:\d{{5,20}}|{ACCOUNT_NUM})\s*$")
 
 
 def unescape(text: str) -> str:
@@ -116,17 +119,30 @@ def counterparty_words(values: list[str]) -> frozenset[str]:
     return frozenset(names)
 
 
-def numbers_after_labels(values: list[str]) -> frozenset[str]:
-    """Числа сразу за подписью реквизита: ячейки таблицы Word идут подряд по строке."""
-    out: set[str] = set()
+def cell_label_type(label: str, value: str) -> str | None:
+    """Тип числа по подписи в соседней ячейке: "Р/с" | "40817..." -> ACCOUNT."""
+    if not NUMBER_CELL_RE.match(value):
+        return None
+    num = digits(value)
+    if ACCOUNT_LABEL_CELL_RE.match(label):
+        # счет только из 20 цифр
+        return "ACCOUNT" if len(num) == 20 else None
+    m = REQ_LABEL_RE.match(label)
+    return requisite_type(m.group(1), num) if m else None
+
+
+def numbers_after_labels(values: list[str]) -> dict[str, str]:
+    """Числа сразу за подписью реквизита и их тип: ячейки таблицы Word идут подряд по строке."""
+    out: dict[str, str] = {}
     prev = ""
     for value in values:
         if not value.strip():
             continue
-        if DIGITS_ONLY_RE.match(value) and REQ_LABEL_RE.match(prev):
-            out.add(value.strip())
+        etype = cell_label_type(prev, value)
+        if etype:
+            out[value.strip()] = etype
         prev = value
-    return frozenset(out)
+    return out
 
 
 def mask_values(values: list[str], masker, mapping: dict | None) -> tuple[list[str], dict]:

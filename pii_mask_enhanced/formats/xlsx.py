@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import zipfile
 from pathlib import Path
-from .office_xml import (DIGITS_ONLY_RE, REQ_LABEL_RE, T_RE, clear_attrs, counterparty_words,
+from .office_xml import (T_RE, cell_label_type, clear_attrs, counterparty_words,
                          escape, mask_values, runs_text, tag, unknown_text_parts, unescape,
                          write_copy)
 
@@ -182,9 +182,9 @@ def _sheet_grid(z: zipfile.ZipFile, name: str, shared: list[str]) -> dict[tuple[
     return grid
 
 
-def labelled_numbers(src: str | Path) -> frozenset[str]:
-    # числа, у которых слева или сверху стоит подпись реквизита ("A9=ИНН", "B9=6083778353").
-    out: set[str] = set()
+def labelled_numbers(src: str | Path) -> dict[str, str]:
+    # числа и их тип по подписи слева или сверху ("A9=ИНН", "B9=6083778353").
+    out: dict[str, str] = {}
     with zipfile.ZipFile(src) as z:
         shared = []
         if "xl/sharedStrings.xml" in z.namelist():
@@ -193,13 +193,12 @@ def labelled_numbers(src: str | Path) -> frozenset[str]:
         for name in (n for n in z.namelist() if re.match(r"^xl/worksheets/[^/]+\.xml$", n)):
             grid = _sheet_grid(z, name, shared)
             for (row, col), value in grid.items():
-                if not DIGITS_ONLY_RE.match(value):
-                    continue
-                left = grid.get((row, col - 1), "")
-                above = grid.get((row - 1, col), "")
-                if REQ_LABEL_RE.match(left) or REQ_LABEL_RE.match(above):
-                    out.add(value.strip())
-    return frozenset(out)
+                for label in (grid.get((row, col - 1), ""), grid.get((row - 1, col), "")):
+                    etype = cell_label_type(label, value)
+                    if etype:
+                        out[value.strip()] = etype
+                        break
+    return out
 
 
 def mask_workbook(src: str | Path, dst: str | Path, masker, mapping: dict | None = None) -> dict:
