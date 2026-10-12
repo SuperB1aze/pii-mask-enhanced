@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+import phonenumbers
+
 from ...registry import sources
 from .. import helpers
 from .. import regulars as regs
@@ -47,10 +49,52 @@ def urls(text: str) -> list[Entity]:
     return out
 
 
+def _phone_key(number: str, ext: str = "") -> str:
+    # "8 903..." и "+7 903..." - один номер и одна метка; добавочный отличает сотрудника
+    if len(number) == 11 and number[0] == "8":
+        number = "7" + number[1:]
+    return number + (f"x{ext}" if ext else "")
+
+
+def _split_ext(value: str) -> tuple[str, str]:
+    m = re.search(regs.PHONE_EXT + "$", value, re.IGNORECASE)
+    if not m:
+        return digits(value), ""
+    return digits(value[:m.start()]), digits(m.group())
+
+
+def _international(text: str) -> list[Entity]:
+    """Номера с "+" или "00" и кодом страны - по плану нумерации этой страны.
+
+    Без региона библиотека берет только номера с кодом страны и сверяет длину и
+    префикс: "+12 500 000 руб." - сумма, у +1 номер длиннее.
+    """
+    # "00 44 ..." библиотека не понимает: в копии для поиска "00" меняется на "+"
+    shadow, starts = list(text), {}
+    for m in regs.PHONE_IDD_RE.finditer(text):
+        plus = m.end() - 1
+        shadow[m.start():m.end()] = " " * (m.end() - m.start())
+        shadow[plus] = "+"
+        starts[plus] = m.start()
+    out = []
+    for m in phonenumbers.PhoneNumberMatcher("".join(shadow), None):
+        num = m.number
+        national = str(num.national_number)
+        if num.country_code == 7 and national[:3] == regs.FAKE_PHONE_CODE:
+            continue
+        start = starts.get(m.start, m.start)
+        out.append(Entity("PHONE", text[start:m.end], start, m.end,
+                          _phone_key(f"{num.country_code}{national}", num.extension or "")))
+    return out
+
+
 def phones(text: str) -> list[Entity]:
     out = []
     for m in regs.PHONE_RE.finditer(text):
-        d = digits(m.group())
-        if d[1:4] != regs.FAKE_PHONE_CODE:
-            out.append(Entity("PHONE", m.group(), m.start(), m.end(), d))
-    return out
+        number, ext = _split_ext(m.group())
+        if number[1:4] != regs.FAKE_PHONE_CODE:
+            out.append(Entity("PHONE", m.group(), m.start(), m.end(), _phone_key(number, ext)))
+    for m in regs.PHONE_LOCAL_RE.finditer(text):
+        number, ext = _split_ext(m.group(1))
+        out.append(Entity("PHONE", m.group(1), m.start(1), m.end(1), _phone_key(number, ext)))
+    return out + _international(text)

@@ -7,7 +7,28 @@ from . import helpers
 FAKE_PHONE_CODE = "000"
 FAKE_EMAIL_RE = re.compile(r"^user\d+@example\.com$", re.IGNORECASE)
 
-PHONE_RE = re.compile(r"(?<!\d)(?:\+7|8)[ \-]?\(?\d{3}\)?[ \-]?\d{3}[ \-]?\d{2}[ \-]?\d{2}(?!\d)")
+# Российский номер: 10 цифр после +7, 7 или 8. Код города - 3, 4 или 5 цифр, остаток
+# добирает до десяти; внутри остатка группы любые ("1-23-45", "123 4567").
+def _digits_run(n: int) -> str:
+    return rf"\d(?:[ \-]?\d){{{n - 1}}}"
+
+PHONE_EXT = r"(?:[ \t]*,?[ \t]*(?:доб|ext|вн)\.?[ \t]*\d{1,6})"
+PHONE_RE = re.compile(
+    r"(?<![\d+])(?:\+[ ]?7|[78])[ \-]?(?:"
+    rf"\(?\d{{3}}\)?[ \-]?{_digits_run(7)}"
+    rf"|\(\d{{4}}\)[ \-]?{_digits_run(6)}"
+    rf"|\(\d{{5}}\)[ \-]?{_digits_run(5)}"
+    rf"){PHONE_EXT}?(?!\d)",
+    re.IGNORECASE,
+)
+
+PHONE_LOCAL_RE = re.compile(
+    r"(?<!\w)(?:телефон\w*|тел|т|факс|моб|сот)\.?[ \t]*(?:[:№][ \t]*)?"
+    rf"(\d{{1,3}}-\d{{2}}-\d{{2}}{PHONE_EXT}?)(?![\d-])",
+    re.IGNORECASE,
+)
+# международный префикс "00" вместо "+": "00 44 20 7946 0958"
+PHONE_IDD_RE = re.compile(r"(?<![\w+(])(?<!\d[ \-])00 ?(?=[1-9])")
 EMAIL_RE = re.compile(r"[\w.%+\-]+@[\w.\-]+\.(?:[A-Za-zА-Яа-яЁё]{2,}|xn--[a-z0-9\-]+)")
 TG_RE = re.compile(r"(?<![\w.\-@])@[A-Za-z][A-Za-z0-9_]{4,31}\b")
 
