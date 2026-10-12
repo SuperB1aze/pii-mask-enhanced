@@ -164,7 +164,8 @@ ADDRESS_RE = re.compile(
 )
 # "д.35, кв.47" без улицы: улицу по фамилии NER мог забрать как персону
 ADDRESS_TAIL_RE = re.compile(
-    rf"д(?:ом)?\.?{helpers.WRAP}\d+[А-Яа-я]?[,\s]*кв\w*\.?{helpers.WRAP}\d+", re.IGNORECASE
+    rf"(?<![А-Яа-яЁё])д(?:ом)?\.?{helpers.WRAP}\d+[А-Яа-я]?[,\s]*кв\w*\.?{helpers.WRAP}\d+",
+    re.IGNORECASE
 )
 # от индекса до конца строки или широкого отступа - адреса нестандартного вида
 ADDRESS_RUN_RE = re.compile(
