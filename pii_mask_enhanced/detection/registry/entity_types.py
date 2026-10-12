@@ -42,6 +42,8 @@ TYPES = (
     EntityType("OKPO", 6, labels=("ОКПО",), label_check=Validator.okpo_ok, spread=True,
                in_default=True, in_presets=True),
     EntityType("ACCOUNT", 5, in_default=True, in_presets=True),
+    # код инвестора: УКК, торговый код
+    EntityType("INVESTOR", 6, spread=True, in_default=True, in_presets=True),
     EntityType("DOCREF", 6, in_presets=True),
     EntityType("DATE", 6, in_presets=True),
     EntityType("CERT", 6, in_presets=True),

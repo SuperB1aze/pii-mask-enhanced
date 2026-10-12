@@ -78,6 +78,16 @@ def accounts(text: str) -> list[Entity]:
             for m in regs.ACCOUNT_RE.finditer(text)]
 
 
+def investor_codes(text: str) -> list[Entity]:
+    """УКК и торговый код: по подписи, а биржевой "MC" + 10 цифр - и без нее."""
+    out = [Entity("INVESTOR", m.group(2), m.start(2), m.end(2), m.group(2).lower(),
+                  source=sources.REQUISITE)
+           for m in regs.INVESTOR_RE.finditer(text)]
+    out += [Entity("INVESTOR", m.group(), m.start(), m.end(), m.group().lower())
+            for m in regs.MOEX_CODE_RE.finditer(text)]
+    return out
+
+
 def doc_numbers(text: str) -> list[Entity]:
     """Номера, отделенные от слова фразой: "Лицензия на ... №1326"."""
     return [Entity("REQ", m.group(g), m.start(g), m.end(g), m.group(g))

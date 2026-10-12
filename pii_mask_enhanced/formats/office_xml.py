@@ -7,7 +7,8 @@ from pathlib import Path
 from xml.sax.saxutils import escape as _sax_escape
 
 from ..detection.recognizers.entity import digits
-from ..detection.recognizers.regulars import ACCOUNT_LABEL_CELL_RE, ACCOUNT_NUM
+from ..detection.recognizers.regulars import (ACCOUNT_LABEL_CELL_RE, ACCOUNT_NUM,
+                                              INVESTOR_CELL_RE, INVESTOR_LABEL_CELL_RE)
 from ..detection.registry.entity_types import REQUISITE_WORD, requisite_type
 from ..detection.registry.legal_forms import CELL_FORM
 
@@ -121,6 +122,9 @@ def counterparty_words(values: list[str]) -> frozenset[str]:
 
 def cell_label_type(label: str, value: str) -> str | None:
     """Тип числа по подписи в соседней ячейке: "Р/с" | "40817..." -> ACCOUNT."""
+    # код инвестора бывает с буквами ("MC0123400000"), поэтому до проверки на число
+    if INVESTOR_LABEL_CELL_RE.match(label) and INVESTOR_CELL_RE.match(value):
+        return "INVESTOR"
     if not NUMBER_CELL_RE.match(value):
         return None
     num = digits(value)

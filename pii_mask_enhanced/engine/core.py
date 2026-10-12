@@ -152,7 +152,9 @@ class Masker:
         cell_type = self.labelled_cells.get(cell)
         if cell_type in self.types:
             start = text.index(cell)
-            candidates.append(Entity(cell_type, cell, start, start + len(cell), digits(cell),
+            # ключ: код инвестора - с буквами, реквизиты - по цифрам
+            key = cell.lower() if cell_type == "INVESTOR" else digits(cell)
+            candidates.append(Entity(cell_type, cell, start, start + len(cell), key,
                                      source=sources.REQUISITE))
         if self._use_ner:
             candidates += [e for e in NatashaNer.shared().extract(text)
