@@ -25,7 +25,13 @@ INN_RE = re.compile(r"(?<![\w])(?:\d{12}|\d{10})(?![\w])")
 SNILS_RE = re.compile(r"(?<!\d)\d{3}-\d{3}-\d{3}[ \-]?\d{2}(?!\d)")
 # подпись прямо перед номером: с ней СНИЛС берем и с неверной суммой
 SNILS_LABEL_RE = re.compile(r"снилс[ \t]*(?:№|:)?[ \t]*\n?[ \t]*$", re.IGNORECASE)
-PASSPORT_RE = re.compile(r"(?<!\d)\d{4} \d{6}(?!\d)")
+PASSPORT_RE = re.compile(
+    r"(?<!\d)\d{2} ?\d{2}"
+    # "№", "номер", запятая или пробел
+    r"(?:[ \t]*,?[ \t]*(?:№|N|номер)[ \t]*|[ \t]*,?[ \t]+)"
+    r"\d{6}(?!\d)",
+    re.IGNORECASE,
+)
 PASSPORT_CTX_RE = re.compile(r"паспорт\w*|сери[ия]\w*", re.IGNORECASE)
 # документ про паспорта - номера ищем по всему тексту, а не рядом со словом
 PASSPORT_DOC_CTX_RE = re.compile(

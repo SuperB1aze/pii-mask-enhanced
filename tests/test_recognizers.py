@@ -215,6 +215,59 @@ def test_passport_with_context():
 def test_passport_without_context():
     # без слова-триггера пара чисел - не паспорт (иначе FP на любой статистике)
     assert types_of("выпустили 4509 123456 единиц", "PASSPORT") == []
+    assert types_of("выпустили 45 09 123456 единиц", "PASSPORT") == []
+
+
+def test_passport_series_split_in_two():
+    """Серию пишут и по две цифры: "45 09 123456" - так она напечатана в самом паспорте."""
+    ents = types_of("паспорт 45 09 123456 выдан ОВД", "PASSPORT")
+    assert [e.text for e in ents] == ["45 09 123456"]
+
+
+def test_passport_split_and_solid_series_one_label():
+    from pii_mask_enhanced.engine.core import Masker
+
+    out = Masker(types=("PASSPORT",), ner=False).mask(
+        "паспорт 4509 123456, в анкете паспорт 45 09 123456")[0]
+    assert out == "паспорт {{PASSPORT_1}}, в анкете паспорт {{PASSPORT_1}}"
+
+
+@pytest.mark.parametrize("src, number", [
+    ("паспорт серия 4509 № 123456", "4509 № 123456"),
+    ("паспорт серия 45 09 № 123456", "45 09 № 123456"),
+    ("паспорт серии 4509 номер 123456", "4509 номер 123456"),
+    ("Паспорт: серия 4509, № 123456", "4509, № 123456"),
+    ("серия 4509, 123456 выдан ОВД", "4509, 123456"),
+    ("паспорт 4509 №123456", "4509 №123456"),
+])
+def test_passport_series_and_number_sign(src, number):
+    """Между серией и номером бывают "№", "номер" и запятая - паспорт берется одной находкой."""
+    assert [e.text for e in types_of(src, "PASSPORT")] == [number]
+
+
+@pytest.mark.parametrize("src", [
+    "выпустили 4509 № 123456 единиц",     # без контекста
+    "паспорт: курс 4509,123456 руб.",      # запятая без пробела - дробь
+    "паспорт ИНН 4509123456",              # слитные 10 цифр - это ИНН
+])
+def test_passport_number_sign_lookalikes(src):
+    assert types_of(src, "PASSPORT") == []
+
+
+@pytest.mark.parametrize("preset", [None, "accounting"])
+def test_passport_with_number_sign_one_label(preset):
+    """Одна метка на паспорт и с набором, и без.
+
+    Без набора те же цифры находит общее правило "серия ... №" и делило паспорт
+    на две метки REQ: при равном приоритете побеждает более длинная находка.
+    """
+    from pii_mask_enhanced.detection import presets
+    from pii_mask_enhanced.engine.core import Masker
+
+    types = presets.get(preset).types if preset else Masker().types
+    out = Masker(types=tuple(types), ner=False).mask(
+        "паспорт серия 4509 № 123456, повторно 4509 123456")[0]
+    assert out == "паспорт серия {{PASSPORT_1}}, повторно {{PASSPORT_1}}"
 
 
 # --- URL / домен ---

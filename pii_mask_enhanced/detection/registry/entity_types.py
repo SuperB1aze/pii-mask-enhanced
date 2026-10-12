@@ -34,7 +34,7 @@ TYPES = (
     EntityType("CARD", 3, in_default=True, in_presets=True),
     EntityType("SNILS", 4, labels=("СНИЛС",), label_check=Validator.snils_ok, spread=True, 
                in_default=True, in_presets=True),
-    EntityType("PASSPORT", 7, in_default=True, in_presets=True),
+    EntityType("PASSPORT", 6, in_default=True, in_presets=True),
     EntityType("INN", 6, labels=("ИНН",), spread=True, in_default=True, in_presets=True),
     EntityType("OGRN", 6, labels=("ОГРН", "ОГРНИП"), in_default=True, in_presets=True),
     EntityType("KPP", 6, labels=("КПП",), spread=True, in_presets=True),
