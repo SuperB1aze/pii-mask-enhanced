@@ -1,6 +1,8 @@
 import re
+from dataclasses import dataclass
 
 from ..registry.entity_types import REQUISITE_WORD
+from ..registry.id_documents import DOCS
 from ..registry.legal_forms import ORG_FORM, TRAILING_FORM
 from . import helpers
 
@@ -58,6 +60,30 @@ PASSPORT_CTX_RE = re.compile(r"паспорт\w*|сери[ия]\w*", re.IGNORECA
 PASSPORT_DOC_CTX_RE = re.compile(
     r"\bДУЛ\b|паспорт\w*|удостоверяющ\w+\s+личность", re.IGNORECASE
 )
+
+
+@dataclass(frozen=True)
+class IdDocRe:
+    """Документ из registry/id_documents, собранный в регулярки."""
+    name: str
+    number: re.Pattern
+    context: re.Pattern | None
+    # слово документа прямо перед номером, через ":", "№", "серия", "номер"
+    label: re.Pattern | None
+    whole_doc: bool
+    tight: bool
+
+
+ID_DOCS = tuple(
+    IdDocRe(d.name, re.compile(rf"(?<![\w№-])(?:{d.number})(?!\w)"),
+            re.compile(d.context, re.IGNORECASE) if d.context else None,
+            re.compile(rf"(?:{d.context})(?:[ \t:№,]|сери[яи]|номер)*$", re.IGNORECASE)
+            if d.context else None,
+            d.whole_doc, d.tight)
+    for d in DOCS
+)
+# слово документа перед номером: "военный билет: серия АБ № 1234567"
+ID_DOC_WINDOW = 60
 # ОГРН (13) и ОГРНИП (15)
 OGRN_RE = re.compile(r"(?<!\d)(?:\d{15}|\d{13})(?!\d)")
 # последняя группа необязательна: хвост в PDF уезжает, а головы хватает
@@ -69,7 +95,6 @@ UID_RE = re.compile(
 # УИД с потерянными дефисами; меньше 16 hex-знаков - не УИД
 UID_LOOSE_RE = re.compile(r"(?<![\w-])[0-9a-f]{8}-[0-9a-f-]{8,48}(?![\w])", re.IGNORECASE)
 
-# Организации
 # для проверки находок NER (Masker.ner_org_needs_form)
 ORG_FORM_RE = re.compile(rf"\b{ORG_FORM}\b", re.IGNORECASE)
 
@@ -91,7 +116,6 @@ ORG_GENERIC_QUOTED_RE = re.compile(
     rf"(?<![\w-]){_ORG_TYPE_GENERIC}[ \t]+([«\"][^»\"\n]{{2,80}}[»\"])", re.IGNORECASE
 )
 
-# "Zaprosto", "Кураж+": до трех слов с заглавной, чтобы не брать цитаты
 ORG_QUOTED_NAME_RE = re.compile(
     r"[«\"“]((?:[A-ZА-ЯЁ][\w.&+-]*|\d[\w.&+-]*)(?:[ \t](?:[A-ZА-ЯЁ][\w.&+-]*|\d[\w.&+-]*)){0,2})[»\"”]")
 

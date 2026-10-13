@@ -7,7 +7,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape as _sax_escape
 
 from ..detection.recognizers.entity import digits
-from ..detection.recognizers.regulars import (ACCOUNT_LABEL_CELL_RE, ACCOUNT_NUM,
+from ..detection.recognizers.regulars import (ACCOUNT_LABEL_CELL_RE, ACCOUNT_NUM, ID_DOCS,
                                               INVESTOR_CELL_RE, INVESTOR_LABEL_CELL_RE)
 from ..detection.registry.entity_types import REQUISITE_WORD, requisite_type
 from ..detection.registry.legal_forms import CELL_FORM
@@ -125,6 +125,10 @@ def cell_label_type(label: str, value: str) -> str | None:
     # код инвестора бывает с буквами ("MC0123400000"), поэтому до проверки на число
     if INVESTOR_LABEL_CELL_RE.match(label) and INVESTOR_CELL_RE.match(value):
         return "INVESTOR"
+    # "Военный билет" | "АБ 1234567": подпись - название документа, ячейка - его номер
+    if any(doc.context and doc.context.search(label) and doc.number.fullmatch(value.strip())
+           for doc in ID_DOCS):
+        return "IDDOC"
     if not NUMBER_CELL_RE.match(value):
         return None
     num = digits(value)

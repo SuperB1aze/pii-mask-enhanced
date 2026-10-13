@@ -10,7 +10,7 @@ from ..recognizers.validators import Validator
 @dataclass(frozen=True)
 class EntityType:
     name: str
-    # меньше - важнее при пересечении спанов
+    # меньше число - важнее при пересечении спанов
     priority: int
     # подписи реквизита: "ИНН 7701234567"
     labels: tuple[str, ...] = ()
@@ -35,6 +35,7 @@ TYPES = (
     EntityType("SNILS", 4, labels=("СНИЛС",), label_check=Validator.snils_ok, spread=True, 
                in_default=True, in_presets=True),
     EntityType("PASSPORT", 6, in_default=True, in_presets=True),
+    EntityType("IDDOC", 6, spread=True, in_default=True, in_presets=True),
     EntityType("INN", 6, labels=("ИНН",), spread=True, in_default=True, in_presets=True),
     EntityType("OGRN", 6, labels=("ОГРН", "ОГРНИП"), in_default=True, in_presets=True),
     EntityType("KPP", 6, labels=("КПП",), spread=True, in_presets=True),
@@ -42,13 +43,11 @@ TYPES = (
     EntityType("OKPO", 6, labels=("ОКПО",), label_check=Validator.okpo_ok, spread=True,
                in_default=True, in_presets=True),
     EntityType("ACCOUNT", 5, in_default=True, in_presets=True),
-    # код инвестора: УКК, торговый код
     EntityType("INVESTOR", 6, spread=True, in_default=True, in_presets=True),
     EntityType("DOCREF", 6, in_presets=True),
     EntityType("DATE", 6, in_presets=True),
     EntityType("CERT", 6, in_presets=True),
     EntityType("UID", 7, in_default=True, in_presets=True),
-    # в наборах выключен: в КУДиР это номер первичного документа ("№ 4")
     EntityType("REQ", 6, labels=("ОКТМО", "ОКВЭД"), in_default=True),
 )
 

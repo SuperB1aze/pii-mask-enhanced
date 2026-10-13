@@ -63,6 +63,34 @@ def uids(text: str) -> list[Entity]:
             for m in outermost(found)]
 
 
+def id_doc_key(value: str) -> str:
+    # "АБ № 1234567" и "АБ 1234567" - один документ, одна метка
+    return re.sub(r"[\W_]", "", value).upper()
+
+
+def id_documents(text: str) -> list[Entity]:
+    """Документы из registry/id_documents: загранпаспорт, военный билет, ВУ, СТС"""
+    out = []
+    for doc in regs.ID_DOCS:
+        in_doc = doc.whole_doc and bool(doc.context.search(text))
+        for m in doc.number.finditer(text):
+            value = m.group()
+            source = ""
+            if doc.context is not None:
+                window = text[max(0, m.start() - regs.ID_DOC_WINDOW):m.start()]
+                # слитный номер и слово с двойным смыслом только сразу за словом документа
+                if value.isdigit() or doc.tight:
+                    if not doc.label.search(window):
+                        continue
+                elif not (in_doc or doc.context.search(window)):
+                    continue
+                # номер, подписанный документом, скрывается и в других местах текста
+                source = sources.REQUISITE
+            out.append(Entity("IDDOC", value, m.start(), m.end(), id_doc_key(value),
+                              source=source))
+    return out
+
+
 def passports(text: str) -> list[Entity]:
     # "паспорт" в 40 знаках перед номером или где угодно в документе про паспорта
     whole_doc = bool(regs.PASSPORT_DOC_CTX_RE.search(text))

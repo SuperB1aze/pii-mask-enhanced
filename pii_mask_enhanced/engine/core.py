@@ -18,6 +18,7 @@ import re
 from ..detection.ner import morph
 from ..detection.ner.ner import NatashaNer
 from ..detection.recognizers.entity import Entity, digits
+from ..detection.recognizers.finders.numbers import id_doc_key
 from ..detection.recognizers.finders.spans import overlaps
 from ..detection.recognizers.recognizers import find_format_entities
 from ..detection.recognizers.regulars import ORG_FORM_RE
@@ -58,9 +59,7 @@ class Masker:
         check_types(types)
         check_types(ner_types or ())
         self.types = set(types)
-        # Каким типам верить со стороны NER. None - всем, что просили в types
-        # (прежнее поведение). Ограничение нужно потому, что надежность
-        # угадывания разная по типам.
+        # Каким типам верить со стороны NER
         self.ner_types = None if ner_types is None else set(ner_types)
         # Принимать от NER организацию, только если в спане есть правовая форма (ООО, ЗАО, ИП...).
         self.ner_org_needs_form = ner_org_needs_form
@@ -152,8 +151,13 @@ class Masker:
         cell_type = self.labelled_cells.get(cell)
         if cell_type in self.types:
             start = text.index(cell)
-            # ключ: код инвестора - с буквами, реквизиты - по цифрам
-            key = cell.lower() if cell_type == "INVESTOR" else digits(cell)
+            # ключ как у находки в тексте: код инвестора и документ - с буквами, реквизиты - по цифрам
+            if cell_type == "INVESTOR":
+                key = cell.lower()
+            elif cell_type == "IDDOC":
+                key = id_doc_key(cell)
+            else:
+                key = digits(cell)
             candidates.append(Entity(cell_type, cell, start, start + len(cell), key,
                                      source=sources.REQUISITE))
         if self._use_ner:
