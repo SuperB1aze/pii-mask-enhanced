@@ -187,12 +187,13 @@ class Masker:
         if anchored:
             candidates += prop.repeats(text, anchored, candidates)
 
-        # Дата рядом с номером документа - строго после повторов
-        if "DATE" in self.types:
-            dates = prop.dates_after_docrefs(text, candidates)
-            if dates:
-                candidates += dates
-                candidates += prop.repeats(text, {e.text.strip() for e in dates}, candidates)
+        # Подробности рядом с найденным - строго после повторов: дата договора,
+        # дата и орган выдачи документа, срок карты
+        details = [e for e in prop.linked_details(text, candidates) if e.type in self.types]
+        if details:
+            candidates += details
+            candidates += prop.repeats(
+                text, {e.text.strip() for e in details if e.source != sources.EXPIRY}, candidates)
 
         candidates += prop.org_case_repeats(text, candidates)
 

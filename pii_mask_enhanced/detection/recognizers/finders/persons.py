@@ -11,9 +11,14 @@ from .spans import Span, inside
 
 
 def birth_dates(text: str) -> list[Entity]:
-    return [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1).lower(),
-                   source=sources.BIRTH)
-            for m in regs.BIRTH_DATE_RE.finditer(text)]
+    out = [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1).lower(),
+                  source=sources.BIRTH)
+           for m in regs.BIRTH_DATE_RE.finditer(text)]
+    for m in regs.BIRTH_YEAR_RE.finditer(text):
+        g = 1 if m.group(1) else 2
+        out.append(Entity("DATE", m.group(g), m.start(g), m.end(g), m.group(g),
+                          source=sources.BIRTH))
+    return out
 
 
 def persons(text: str) -> list[Entity]:

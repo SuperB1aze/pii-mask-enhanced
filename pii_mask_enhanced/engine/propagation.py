@@ -6,7 +6,8 @@ import re
 
 from ..detection.ner import morph
 from ..detection.ner.helpers import STOP_TERMS
-from ..detection.recognizers.entity import Entity
+from ..detection.recognizers import regulars as regs
+from ..detection.recognizers.entity import Entity, digits
 from ..detection.recognizers.regulars import DATE_AFTER_RE, ORG_FORM_RE
 from ..detection.registry import sources
 
@@ -95,17 +96,106 @@ def person_token_repeats(text: str, known: list[Entity]) -> list[Entity]:
     return out
 
 
-def dates_after_docrefs(text: str, known: list[Entity]) -> list[Entity]:
-    # Дата сразу за номером документа
+# --- Подробности рядом с найденным: дата договора, дата и орган выдачи, срок карты ---
+
+def _issuer(text: str, start: int, end: int) -> Entity | None:
+    # орган выдачи - до запятой или отбивки; без единой прописной это не название органа
+    seg = text[start:end]
+    cut = regs.ISSUER_END_RE.search(seg)
+    if cut:
+        seg = seg[:cut.start()]
+    name = seg.strip(" \t.:-")
+    if len(name) < 3 or not any(c.isupper() for c in name):
+        return None
+    at = start + seg.index(name)
+    return Entity("ISSUER", name, at, at + len(name), " ".join(name.lower().split()),
+                  source=sources.ISSUE)
+
+
+def _after_docref(text: str, ent: Entity) -> list[Entity]:
+    m = DATE_AFTER_RE.match(text, ent.end)
+    if not m:
+        return []
+    return [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1).lower(),
+                   source=sources.DOCDATE)]
+
+
+def _after_document(text: str, ent: Entity) -> list[Entity]:
+    # "выдан ОВД района Арбат 12.03.2015" и "выдан 12.03.2015 ОУФМС России по г. Москве"
+    m = regs.ISSUE_AFTER_RE.match(text, ent.end)
+    if not m:
+        return []
+    base, tail = m.start(1), m.group(1)
+    date = regs.ISSUE_DATE_RE.search(tail)
+    code = regs.UNIT_CODE_RE.search(tail)
+    out = []
+    if date:
+        out.append(Entity("DATE", date.group(), base + date.start(), base + date.end(),
+                          date.group().lower(), source=sources.ISSUE))
+    # орган - до даты, а если там пусто, то после нее; код подразделения его заканчивает
+    stops = [x.start() for x in (date, code) if x]
+    issuer = _issuer(text, base, base + min(stops, default=len(tail)))
+    if issuer is None and date:
+        end = code.start() if code and code.start() > date.end() else len(tail)
+        issuer = _issuer(text, base + date.end(), base + end)
+    if issuer:
+        out.append(issuer)
+    return out
+
+
+def _after_card(text: str, ent: Entity) -> list[Entity]:
+    m = regs.EXPIRY_AFTER_RE.match(text, ent.end)
+    if not m:
+        return []
+    return [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1), source=sources.EXPIRY)]
+
+
+# тип якоря -> что искать сразу за ним
+_AFTER = {
+    "DOCREF": _after_docref,
+    "PASSPORT": _after_document,
+    "IDDOC": _after_document,
+    "CARD": _after_card,
+}
+
+
+def _labelled_details(text: str, known: list[Entity]) -> list[Entity]:
+    """Те же подробности по подписи где угодно в тексте - если якорь в тексте есть.
+
+    В анкете "Дата выдачи" и "Кем выдан" - отдельные поля, не рядом с номером.
+    Код подразделения узнается по подписи и без паспорта.
+    """
+    anchors = {e.type for e in known}
+    out = [Entity("ISSUER", m.group(1), m.start(1), m.end(1), digits(m.group(1)),
+                  source=sources.ISSUE)
+           for m in regs.UNIT_CODE_RE.finditer(text)]
+    if anchors & {"PASSPORT", "IDDOC"}:
+        out += [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1).lower(),
+                       source=sources.ISSUE)
+                for m in regs.ISSUE_DATE_LABEL_RE.finditer(text)]
+        for m in regs.ISSUER_LABEL_RE.finditer(text):
+            issuer = _issuer(text, m.start(1), m.end(1))
+            if issuer:
+                out.append(issuer)
+    if "CARD" in anchors:
+        out += [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1),
+                       source=sources.EXPIRY)
+                for m in regs.EXPIRY_LABEL_RE.finditer(text)]
+    return out
+
+
+def linked_details(text: str, known: list[Entity]) -> list[Entity]:
+    """Подробности, которые ПД только рядом с найденной сущностью.
+
+    Дата сама по себе не ПД, а дата договора, дата выдачи паспорта и срок карты - ПД.
+    Поэтому они ищутся не распознавателями, а здесь: от уже найденного номера.
+    """
     out = []
     for ent in known:
-        if ent.type != "DOCREF":
-            continue
-        m = DATE_AFTER_RE.match(text, ent.end)
-        if m:
-            out.append(Entity("DATE", m.group(1), m.start(1), m.end(1),
-                              m.group(1).lower(), source=sources.DOCDATE))
-    return out
+        handler = _AFTER.get(ent.type)
+        if handler:
+            out += handler(text, ent)
+    return out + _labelled_details(text, known)
 
 
 def bracket_aliases(text: str, known: list[Entity]) -> list[Entity]:

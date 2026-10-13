@@ -48,8 +48,11 @@ TYPES = (
     EntityType("ACCOUNT", 5, in_default=True, in_presets=True),
     EntityType("INVESTOR", 6, spread=True, in_default=True, in_presets=True),
     EntityType("DOCREF", 6, in_presets=True),
-    EntityType("DATE", 6, in_presets=True),
-    
+    # дата рядом с ПД
+    EntityType("DATE", 6, in_default=True, in_presets=True),
+    # орган выдачи документа и код подразделения
+    EntityType("ISSUER", 7, in_default=True, in_presets=True),
+
     EntityType("CERT", 9, in_presets=True),
     EntityType("UID", 7, in_default=True, in_presets=True),
     EntityType("REQ", 6, labels=("ОКТМО", "ОКВЭД"), in_default=True),
