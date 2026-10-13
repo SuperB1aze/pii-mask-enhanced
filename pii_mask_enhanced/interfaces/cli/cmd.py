@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from ...detection import presets
+from ...detection.registry.entity_types import BY_NAME
 from ...engine.core import Masker
 from ...engine.settings import Options, build_masker, type_names
 from ...formats import xlsx
@@ -187,7 +188,10 @@ class CMD:
         for name in presets.names():
             preset = presets.get(name)
             print(f"{name} - {preset.title}")
-            print(f"  типы: {','.join(preset.types)}")
+            for group, title in (("personal", "типы"), ("technical", "технические")):
+                names = [t for t in preset.types if BY_NAME[t].group == group]
+                if names:
+                    print(f"  {title}: {','.join(names)}")
             print(f"  организация только с правовой формой: "
                   f"{'да' if preset.ner_org_needs_form else 'нет'}")
         print(f"{presets.AUTO} - выбрать набор по профилю документа")

@@ -20,6 +20,8 @@ class EntityType:
     spread: bool = False
     in_default: bool = False
     in_presets: bool = False
+    # "personal" - данные человека и организации, "technical" - логи и сеть (IP, сессия).
+    group: str = "personal"
 
 
 TYPES = (
@@ -32,6 +34,7 @@ TYPES = (
     EntityType("URL", 8, in_default=True, in_presets=True),
     EntityType("ADDRESS", 8, in_default=True, in_presets=True),
     EntityType("CARD", 3, in_default=True, in_presets=True),
+    
     EntityType("SNILS", 4, labels=("СНИЛС",), label_check=Validator.snils_ok, spread=True, 
                in_default=True, in_presets=True),
     EntityType("PASSPORT", 6, in_default=True, in_presets=True),
@@ -46,9 +49,15 @@ TYPES = (
     EntityType("INVESTOR", 6, spread=True, in_default=True, in_presets=True),
     EntityType("DOCREF", 6, in_presets=True),
     EntityType("DATE", 6, in_presets=True),
-    EntityType("CERT", 6, in_presets=True),
+    
+    EntityType("CERT", 9, in_presets=True),
     EntityType("UID", 7, in_default=True, in_presets=True),
     EntityType("REQ", 6, labels=("ОКТМО", "ОКВЭД"), in_default=True),
+
+    EntityType("IP", 9, in_default=True, in_presets=True, group="technical"),
+    EntityType("DEVICE", 5, in_default=True, in_presets=True, group="technical"),
+    EntityType("SESSION", 8, in_default=True, in_presets=True, group="technical"),
+    EntityType("USER_AGENT", 4, in_default=True, in_presets=True, group="technical"),
 )
 
 BY_NAME = {t.name: t for t in TYPES}

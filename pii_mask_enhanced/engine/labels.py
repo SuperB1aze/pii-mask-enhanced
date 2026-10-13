@@ -10,7 +10,7 @@ import re
 from ..detection.recognizers.entity import Entity, digits
 from ..detection.recognizers.regulars import FAKE_EMAIL_RE, FAKE_PHONE_CODE
 
-LABEL_RE = re.compile(r"\{\{([A-Z]+)_(\d+)\}\}")
+LABEL_RE = re.compile(r"\{\{([A-Z]+(?:_[A-Z]+)*)_(\d+)\}\}")
 PHONE_SCAN_RE = re.compile(r"\+?[78][\d \-()]{9,18}\d")
 FAKE_EMAIL_SCAN_RE = re.compile(r"user\d+@example\.com", re.IGNORECASE)
 

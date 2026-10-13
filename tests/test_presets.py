@@ -8,6 +8,7 @@
 Наборов два, и различает их строгость к организациям, а не список типов
 (довод - в docs/dev/2026-09-29-spec-presets.md).
 """
+import os
 import subprocess
 import sys
 
@@ -98,8 +99,11 @@ def test_resolve_explains_the_choice():
 # --- CLI -------------------------------------------------------------------
 
 def run(args, cwd):
+    # кодировку вывода задаем явно: иначе кириллица в выводе зависит от окружения,
+    # в котором запущены тесты
     return subprocess.run([sys.executable, "-m", "pii_mask_enhanced.interfaces.cli.cli", *args],
-                          capture_output=True, text=True, cwd=cwd)
+                          capture_output=True, text=True, cwd=cwd, encoding="utf-8",
+                          env={**os.environ, "PYTHONIOENCODING": "utf-8"})
 
 
 def mask_with(tmp_path, text, extra):
@@ -152,6 +156,8 @@ def test_presets_command_lists_the_sets(tmp_path):
     assert proc.returncode == 0
     assert "resume" in proc.stdout and "accounting" in proc.stdout
     assert "PERSON" in proc.stdout
+    # технические типы показаны отдельной строкой
+    assert "технические: IP,DEVICE,SESSION,USER_AGENT" in proc.stdout
 
 
 def test_unknown_type_fails_loudly(tmp_path):
