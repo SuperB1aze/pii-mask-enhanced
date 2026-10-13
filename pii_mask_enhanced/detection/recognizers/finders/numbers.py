@@ -69,11 +69,14 @@ def id_doc_key(value: str) -> str:
 
 
 def id_documents(text: str) -> list[Entity]:
-    """Документы из registry/id_documents: загранпаспорт, военный билет, ВУ, СТС"""
+    """Документы из registry/id_documents: номер формата документа рядом со словом документа."""
     out = []
     for doc in regs.ID_DOCS:
-        in_doc = doc.whole_doc and bool(doc.context.search(text))
+        # слово документа по всему тексту ищем, только когда нашелся номер его формата
+        in_doc = None
         for m in doc.number.finditer(text):
+            if in_doc is None:
+                in_doc = doc.whole_doc and bool(doc.context.search(text))
             value = m.group()
             source = ""
             if doc.context is not None:
