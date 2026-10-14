@@ -252,6 +252,29 @@ def test_card_lookalikes_not_cards(src):
     assert types_of(src, "CARD") == []
 
 
+# --- VIN ---
+
+@pytest.mark.parametrize("src, vin", [
+    ("VIN XTA21099012345678", "XTA21099012345678"),
+    ("VIN: WVWZZZ1JZXW000001", "WVWZZZ1JZXW000001"),
+    ("номер кузова XTA210990Y1234567", "XTA210990Y1234567"),
+    ("продан автомобиль XTA21099012345678", "XTA21099012345678"),   # без подписи
+    ("VIN: ABCDEF12345678901", "ABCDEF12345678901"),               # из одних A-F - не сертификат
+])
+def test_vin(src, vin):
+    assert [e.text for e in types_of(src, "VEHICLE")] == [vin]
+
+
+@pytest.mark.parametrize("src", [
+    "артикул ABC12345678901234",     # та же форма, но рядом товар
+    "код 12345678901234567",         # без букв
+    "SKU AB1234567890CDEFG",         # в конце не порядковый номер
+    "XTI21099012345678",             # I в VIN не бывает
+])
+def test_vin_lookalikes(src):
+    assert types_of(src, "VEHICLE") == []
+
+
 # --- PASSPORT (только с контекстным словом) ---
 
 def test_passport_with_context():

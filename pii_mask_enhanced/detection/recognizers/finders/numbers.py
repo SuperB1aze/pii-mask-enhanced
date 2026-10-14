@@ -36,6 +36,22 @@ def snils(text: str) -> list[Entity]:
     return out
 
 
+def vins(text: str) -> list[Entity]:
+    out = []
+    for m in regs.VIN_RE.finditer(text):
+        vin = m.group()
+        window = text[max(0, m.start() - 40):m.start()]
+        labelled = regs.VIN_LABEL_RE.search(window)
+        # без подписи: буквы и цифры вместе, в конце - порядковый номер из 4 цифр, и рядом
+        # не товар. Так отсекаются артикулы и коды товаров той же длины
+        if labelled or (any(c.isalpha() for c in vin) and vin[-4:].isdigit()
+                        and sum(c.isdigit() for c in vin) >= 6
+                        and not regs.VIN_GOODS_CTX_RE.search(window)):
+            out.append(Entity("VEHICLE", vin, m.start(), m.end(), vin,
+                              source=sources.REQUISITE if labelled else ""))
+    return out
+
+
 def inns(text: str) -> list[Entity]:
     # без подписи "ИНН" - строгий режим ядра это учитывает
     return [Entity("INN", m.group(), m.start(), m.end(), m.group(), source=sources.BARE)

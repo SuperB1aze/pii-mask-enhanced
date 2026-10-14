@@ -39,6 +39,8 @@ TYPES = (
                in_default=True, in_presets=True),
     EntityType("PASSPORT", 6, in_default=True, in_presets=True),
     EntityType("IDDOC", 6, spread=True, in_default=True, in_presets=True),
+    # VIN; важнее CERT: VIN из одних A-F и цифр - не сертификат
+    EntityType("VEHICLE", 5, spread=True, in_default=True, in_presets=True),
     EntityType("INN", 6, labels=("ИНН",), spread=True, in_default=True, in_presets=True),
     EntityType("OGRN", 6, labels=("ОГРН", "ОГРНИП"), in_default=True, in_presets=True),
     EntityType("KPP", 6, labels=("КПП",), spread=True, in_presets=True),

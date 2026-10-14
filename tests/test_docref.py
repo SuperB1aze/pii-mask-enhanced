@@ -151,6 +151,23 @@ def test_dbo_is_anchor(src):
     assert "ДБО" in out
 
 
+def test_credit_contract_abbreviation():
+    """"КД" - кредитный договор: номер и дата за ним скрываются, как у договора."""
+    out = _mask("КД № 625/0000-0123456 от 01.02.2020")
+    assert "625/0000-0123456" not in out and "01.02.2020" not in out
+
+
+def test_credit_contract_abbreviation_masked_by_default():
+    out = Masker(ner=False).mask("КД № 625/0000-0123456")[0]
+    assert "625/0000-0123456" not in out
+
+
+@pytest.mark.parametrize("src", ["КДП № 5", "кд № 1"])
+def test_credit_contract_abbreviation_is_exact(src):
+    """Сокращение - с учетом регистра и отдельным словом."""
+    assert _mask(src) == src
+
+
 def test_dbo_inside_word_is_not_anchor():
     src = "подборка № 5"
     assert _mask(src) == src
