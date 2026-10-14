@@ -7,7 +7,7 @@ import re
 from ..detection.ner import morph
 from ..detection.ner.helpers import STOP_TERMS
 from ..detection.recognizers import regulars as regs
-from ..detection.recognizers.entity import Entity, digits
+from ..detection.recognizers.entity import Entity
 from ..detection.recognizers.regulars import DATE_AFTER_RE, ORG_FORM_RE
 from ..detection.registry import sources
 
@@ -120,14 +120,18 @@ def _after_docref(text: str, ent: Entity) -> list[Entity]:
                    source=sources.DOCDATE)]
 
 
-def _after_document(text: str, ent: Entity) -> list[Entity]:
-    # "выдан ОВД района Арбат 12.03.2015" и "выдан 12.03.2015 ОУФМС России по г. Москве"
-    m = regs.ISSUE_AFTER_RE.match(text, ent.end)
-    if not m:
-        return []
-    base, tail = m.start(1), m.group(1)
+def _issue_tail(text: str, base: int, end: int) -> list[Entity]:
+    # "ОВД района Арбат 12.03.2015" и "12.03.2015 ОУФМС России по г. Москве" за словом "выдан"
+    tail = text[base:end]
     date = regs.ISSUE_DATE_RE.search(tail)
-    code = regs.UNIT_CODE_RE.search(tail)
+    if not date:
+        # орган перенесен на следующую строку, дата - там же: "выдан Отделом УФМС России\n
+        # по Тверской обл. 12.03.2015". Если дата уже нашлась, следующая строка - не орган
+        nxt = regs.ISSUE_NEXT_LINE_RE.match(text, end)
+        if nxt:
+            tail = text[base:nxt.end()]
+            date = regs.ISSUE_DATE_RE.search(tail)
+    code = regs.UNIT_CODE_LABEL_RE.search(tail)
     out = []
     if date:
         out.append(Entity("DATE", date.group(), base + date.start(), base + date.end(),
@@ -141,6 +145,11 @@ def _after_document(text: str, ent: Entity) -> list[Entity]:
     if issuer:
         out.append(issuer)
     return out
+
+
+def _after_document(text: str, ent: Entity) -> list[Entity]:
+    m = regs.ISSUE_AFTER_RE.match(text, ent.end)
+    return _issue_tail(text, m.start(1), m.end(1)) if m else []
 
 
 def _after_card(text: str, ent: Entity) -> list[Entity]:
@@ -160,23 +169,18 @@ _AFTER = {
 
 
 def _labelled_details(text: str, known: list[Entity]) -> list[Entity]:
-    """Те же подробности по подписи где угодно в тексте - если якорь в тексте есть.
-
-    В анкете "Дата выдачи" и "Кем выдан" - отдельные поля, не рядом с номером.
-    Код подразделения узнается по подписи и без паспорта.
+    """
+    В анкете "Дата выдачи" и "Выдан:" - отдельные поля. 
+    "Кем выдан" и код подразделения однозначны и без паспорта - они в registry/labelled_values.
     """
     anchors = {e.type for e in known}
-    out = [Entity("ISSUER", m.group(1), m.start(1), m.end(1), digits(m.group(1)),
-                  source=sources.ISSUE)
-           for m in regs.UNIT_CODE_RE.finditer(text)]
+    out = []
     if anchors & {"PASSPORT", "IDDOC"}:
         out += [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1).lower(),
                        source=sources.ISSUE)
                 for m in regs.ISSUE_DATE_LABEL_RE.finditer(text)]
-        for m in regs.ISSUER_LABEL_RE.finditer(text):
-            issuer = _issuer(text, m.start(1), m.end(1))
-            if issuer:
-                out.append(issuer)
+        for m in regs.ISSUED_FIELD_RE.finditer(text):
+            out += _issue_tail(text, m.start(1), m.end(1))
     if "CARD" in anchors:
         out += [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1),
                        source=sources.EXPIRY)
@@ -185,11 +189,7 @@ def _labelled_details(text: str, known: list[Entity]) -> list[Entity]:
 
 
 def linked_details(text: str, known: list[Entity]) -> list[Entity]:
-    """Подробности, которые ПД только рядом с найденной сущностью.
-
-    Дата сама по себе не ПД, а дата договора, дата выдачи паспорта и срок карты - ПД.
-    Поэтому они ищутся не распознавателями, а здесь: от уже найденного номера.
-    """
+    # Подробности, которые ПД только рядом с найденной сущностью.
     out = []
     for ent in known:
         handler = _AFTER.get(ent.type)

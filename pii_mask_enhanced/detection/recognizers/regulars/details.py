@@ -4,6 +4,7 @@
 """
 import re
 
+from ...registry.labelled_values import UNIT_CODE_LABEL
 from .. import helpers
 
 # дата выдачи с необязательным "г.": "12 марта 2015 г."
@@ -11,15 +12,16 @@ ISSUE_DATE_RE = re.compile(rf"{helpers.DATE}(?:[ \t]*г(?:од\w*|\.))?", re.IGN
 # хвост за паспортом или документом: "выдан ОВД района Арбат 12.03.2015, код подразделения 770-001"
 ISSUE_AFTER_RE = re.compile(
     r"[ \t,.;]*(?:кем[ \t]+)?(?:выдан\w*|дата[ \t]+выдачи)[ \t:]*([^\n]{3,160})", re.IGNORECASE)
-# код подразделения
-UNIT_CODE_RE = re.compile(r"код\w*[ \t]+подразделени\w*[ \t:№]*(\d{3}[ \t-]?\d{3})(?!\d)",
-                          re.IGNORECASE)
+# подпись кода подразделения заканчивает орган; сам код - в registry/labelled_values
+UNIT_CODE_LABEL_RE = re.compile(UNIT_CODE_LABEL, re.IGNORECASE)
+# орган, перенесенный на следующую строку: "выдан Отделом УФМС России\nпо Тверской обл."
+ISSUE_NEXT_LINE_RE = re.compile(r"\n[ \t]*(?=[а-яёa-z\d])[^\n]{1,120}")
 
+# поля анкеты, если в тексте есть паспорт или документ; "кем выдан" - в registry/labelled_values
 ISSUE_DATE_LABEL_RE = re.compile(rf"дата[ \t]+выдачи[ \t:]*\n?[ \t]*({ISSUE_DATE_RE.pattern})",
                                  re.IGNORECASE)
-ISSUER_LABEL_RE = re.compile(
-    r"(?:кем[ \t]+выдан\w*|орган\w*,?[ \t]+выдавш\w+[ \t]+(?:документ|паспорт)\w*)[ \t:]*\n?[ \t]*"
-    r"([^\n]{3,120})", re.IGNORECASE)
+# "Выдан: ОВД района Арбат" отдельной строкой; двоеточие обязательно - "товар выдан" не поле
+ISSUED_FIELD_RE = re.compile(r"(?<!\w)выдан\w*[ \t]*:[ \t]*\n?[ \t]*([^\n]{3,160})", re.IGNORECASE)
 # орган выдачи кончается на запятой, широкой отбивке или границе колонки
 ISSUER_END_RE = re.compile(r"[,;|]|[ \t]{3,}")
 

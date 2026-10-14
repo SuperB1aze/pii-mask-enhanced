@@ -43,6 +43,13 @@ _INVESTOR_LABEL = (
 _INVESTOR_CODE = (r"(?=[\w/+.-]*\d)[A-Za-zА-Яа-яЁё0-9](?:[\w/+-]|\.(?=[\w/+-])){2,24}"
                   r"(?!\.?[\w/+-])")
 
+# Орган выдачи: подпись поля анкеты однозначна
+_ISSUER_LABEL = (r"кем[ \t]+выдан\w*"
+                 r"|(?:наименовани\w*[ \t]+)?орган\w*,?[ \t]+выдавш\w+[ \t]+(?:документ|паспорт)\w*")
+_ISSUER_NAME = r"(?=[^\n,;|]*[А-ЯЁA-Z])[^\n,;|]*?[^\s,;|.](?=[ \t.]*(?:\n|$|[,;|]|[ \t]{3}))"
+# подпись кода подразделения; ей же engine/propagation заканчивает орган после "выдан"
+UNIT_CODE_LABEL = r"код\w*[ \t]+подр(?:азделени\w*|\.)"
+
 
 @dataclass(frozen=True)
 class LabelledValue:
@@ -110,4 +117,9 @@ VALUES = (
     # назначение платежа: рассказывает, кто, кому и за что платил
     LabelledValue("назначение платежа", "PAYMENT", r"назначени\w*[ \t]+платеж\w*",
                   _TO_LINE_END),
+
+    # орган выдачи документа; после "выдан" за номером его разбирает engine/propagation
+    LabelledValue("орган выдачи", "ISSUER", _ISSUER_LABEL, _ISSUER_NAME),
+    LabelledValue("код подразделения", "ISSUER", UNIT_CODE_LABEL, r"\d{3}[ \t-]?\d{3}(?!\d)",
+                  digits_key=True),
 )

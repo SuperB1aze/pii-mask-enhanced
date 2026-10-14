@@ -60,6 +60,54 @@ def test_unit_code_without_passport():
     assert _mask("код подразделения 770-001") == "код подразделения {{ISSUER_1}}"
 
 
+def test_unit_code_abbreviated():
+    assert _mask("паспорт 4509 123456 выдан ГУ МВД России по г. Москве 12.03.2015 код подр. 770-001") \
+        == "паспорт {{PASSPORT_1}} выдан {{ISSUER_1}} {{DATE_1}} код подр. {{ISSUER_2}}"
+
+
+def test_issuer_field_on_its_own_line():
+    """"Выдан:" отдельной строкой под номером - поле анкеты, а не продолжение номера."""
+    assert _mask("Паспорт: 4509 123456\nВыдан: ОВД района Арбат") == \
+        "Паспорт: {{PASSPORT_1}}\nВыдан: {{ISSUER_1}}"
+
+
+def test_issuer_wrapped_to_next_line():
+    """Перенос в PDF: без него регион и дата выдачи оставались открытыми."""
+    out = _mask("паспорт 4509 123456 выдан Отделом УФМС России\nпо Тверской обл. 12.03.2015")
+    assert "Тверской" not in out and "12.03.2015" not in out
+
+
+def test_next_line_is_not_issuer_when_date_already_found():
+    out = _mask("паспорт 4509 123456 выдан 12.03.2015 ОВД Арбат\nпроживает в общежитии")
+    assert out.endswith("\nпроживает в общежитии")
+
+
+@pytest.mark.parametrize("src, expected", [
+    ("Кем выдан\nОУФМС России по г. Москве", "Кем выдан\n{{ISSUER_1}}"),
+    ("Орган, выдавший документ: ОУФМС России по г. Москве",
+     "Орган, выдавший документ: {{ISSUER_1}}"),
+])
+def test_issuer_label_without_passport(src, expected):
+    """"Кем выдан" - подпись однозначная: паспорт рядом ей не нужен."""
+    assert _mask(src) == expected
+
+
+@pytest.mark.parametrize("src", ["Кем выдан: не указано", "ОУФМС России по г. Москве проводит прием"])
+def test_not_an_issuer(src):
+    assert _mask(src) == src
+
+
+@pytest.mark.parametrize("label, value, expected", [
+    ("Кем выдан", "ОУФМС России по г. Москве", "ISSUER"),
+    ("Код подразделения", "770-001", "ISSUER"),
+    ("Кем выдан", "не указано", None),
+])
+def test_issuer_cell_label(label, value, expected):
+    from pii_mask_enhanced.formats.office_xml import cell_label_type
+
+    assert cell_label_type(label, value) == expected
+
+
 # --- срок карты ---
 
 @pytest.mark.parametrize("src, expected", [
