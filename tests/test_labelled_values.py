@@ -55,6 +55,31 @@ def test_value_after_label(src, expected, preset):
     assert _mask(src, preset) == expected
 
 
+@pytest.mark.parametrize("src, expected", [
+    ("является гражданином Российской Федерации", "является гражданином {{PERSONAL_1}}"),
+    ("гражданки Узбекистана Петровой", "гражданки {{PERSONAL_1}} Петровой"),
+    ("Citizenship: Russia", "Citizenship: {{PERSONAL_1}}"),
+    ("Nationality: Belarus", "Nationality: {{PERSONAL_1}}"),
+    ("национальность: русская", "национальность: {{PERSONAL_1}}"),
+    ("по национальности татарин", "по национальности {{PERSONAL_1}}"),
+    ("Иванов И.И., лицо без гражданства", "{{PERSON_1}}, {{PERSONAL_1}}"),
+    ("иностранный гражданин Петров П.П.", "{{PERSONAL_1}} {{PERSON_1}}"),
+])
+def test_citizenship_forms(src, expected):
+    assert _mask(src) == expected
+
+
+@pytest.mark.parametrize("src", [
+    "права граждан РФ",                             # множественное - про группу людей
+    "гражданам Таджикистана",
+    "иностранные граждане обязаны встать на учет",  # статус без человека рядом - текст закона
+    "лицо без гражданства",
+    "русская кухня",                                # национальность - только у подписи
+])
+def test_citizenship_lookalikes_untouched(src):
+    assert _mask(src) == src
+
+
 def test_citizenship_does_not_take_the_surname():
     """Страна - одно слово или устойчивое из двух; дальше уже фамилия."""
     assert _mask("гражданин Российской Федерации Белоусов") == "гражданин {{PERSONAL_1}} Белоусов"
