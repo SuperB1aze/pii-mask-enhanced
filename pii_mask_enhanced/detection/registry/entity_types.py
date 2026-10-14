@@ -47,6 +47,15 @@ TYPES = (
                in_default=True, in_presets=True),
     EntityType("ACCOUNT", 5, in_default=True, in_presets=True),
     EntityType("INVESTOR", 6, spread=True, in_default=True, in_presets=True),
+    # Значения по подписи (registry/labelled_values)
+    # идентификатор человека в чужой системе: ЕСИА, MDM, логин, полис, ЭЛН, таб. номер
+    EntityType("PERSON_ID", 5, spread=True, in_default=True, in_presets=True),
+    # PIN, CVV, пароль, кодовое слово
+    EntityType("SECRET", 5, spread=True, in_default=True, in_presets=True),
+    # пол, гражданство, семейное положение, возраст, кредитный рейтинг
+    EntityType("PERSONAL", 9, in_default=True, in_presets=True),
+    # назначение платежа закрывается целиком
+    EntityType("PAYMENT", 3, in_default=True, in_presets=True),
     EntityType("DOCREF", 6, in_presets=True),
     # дата рядом с ПД
     EntityType("DATE", 6, in_default=True, in_presets=True),

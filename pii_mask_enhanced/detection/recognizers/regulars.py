@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from ..registry.entity_types import REQUISITE_WORD
 from ..registry.id_documents import DOCS
+from ..registry.labelled_values import VALUES
 from ..registry.legal_forms import ORG_FORM, TRAILING_FORM
 from . import helpers
 
@@ -86,6 +87,32 @@ ID_DOCS = tuple(
 )
 # слово документа перед номером: "военный билет: серия АБ № 1234567"
 ID_DOC_WINDOW = 60
+
+
+@dataclass(frozen=True)
+class LabelledValueRe:
+    """Значение по подписи из registry/labelled_values, собранное в регулярки."""
+    name: str
+    type: str
+    # в тексте: подпись, разделитель, значение (группа 1)
+    text: re.Pattern
+    # в таблице: подпись и значение в соседних ячейках
+    cell_label: re.Pattern
+    cell_value: re.Pattern
+
+
+def _labelled_value(v) -> LabelledValueRe:
+    sep = r"[ \t]*[:=][ \t]*" if v.needs_sep else r"[ \t]*(?:[:=№][ \t]*)?"
+    value = rf"(?-i:{v.value})"
+    return LabelledValueRe(
+        v.name, v.type,
+        re.compile(rf"(?<!\w)(?:{v.label})(?!\w){sep}\n?[ \t]*({value})", re.IGNORECASE),
+        re.compile(rf"^\s*(?:{v.label})\s*[:=№]?\s*$", re.IGNORECASE),
+        re.compile(rf"^\s*{value}\s*$"),
+    )
+
+
+LABELLED_VALUES = tuple(_labelled_value(v) for v in VALUES)
 # ОГРН (13) и ОГРНИП (15)
 OGRN_RE = re.compile(r"(?<!\d)(?:\d{15}|\d{13})(?!\d)")
 # последняя группа необязательна: хвост в PDF уезжает, а головы хватает

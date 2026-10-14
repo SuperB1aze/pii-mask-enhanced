@@ -19,6 +19,8 @@ from ..detection.ner import morph
 from ..detection.ner.ner import NatashaNer
 from ..detection.recognizers.entity import Entity, digits
 from ..detection.recognizers.finders.numbers import id_doc_key
+from ..detection.recognizers.finders.requisites import value_key
+from ..detection.registry.labelled_values import TYPES as LABELLED_TYPES
 from ..detection.recognizers.finders.spans import overlaps
 from ..detection.recognizers.recognizers import find_format_entities
 from ..detection.recognizers.regulars import ORG_FORM_RE
@@ -79,7 +81,7 @@ class Masker:
         # названия организаций, заданные снаружи (см. recognizers.load_org_dict)
         self.org_names = tuple(org_names)
 
-    # --- фильтры кандидатов ---
+    # фильтры кандидатов
 
     def _ner_org_ok(self, ent: Entity) -> bool:
         # Организация от NER: с правовой формой или без разницы. Правило касается ТОЛЬКО организаций и только тех, что предложил NER.
@@ -99,7 +101,6 @@ class Masker:
 
     def with_hints(self, supported_names: frozenset[str], labelled: dict[str, str]) -> Masker:
         """Копия с подсказками документа; заданные явно не заменяются.
-
         labelled - числа с подписью в соседней ячейке и их тип (office_xml.cell_label_type).
         """
         clone = copy.copy(self)
@@ -119,7 +120,7 @@ class Masker:
             return True
         return any(tok in self.supported_names for tok in key.split())
 
-    # --- mask ---
+    # mask
 
     def mask(
         self,
@@ -152,8 +153,8 @@ class Masker:
         if cell_type in self.types:
             start = text.index(cell)
             # ключ как у находки в тексте: код инвестора и документ - с буквами, реквизиты - по цифрам
-            if cell_type == "INVESTOR":
-                key = cell.lower()
+            if cell_type == "INVESTOR" or cell_type in LABELLED_TYPES:
+                key = value_key(cell)
             elif cell_type == "IDDOC":
                 key = id_doc_key(cell)
             else:
@@ -262,7 +263,7 @@ class Masker:
             masked, mapping = self.mask(masked, mapping, extra_entities=extras)
         return masked, mapping
 
-    # --- unmask ---
+    # unmask
 
     def unmask(self, text: str, mapping: dict) -> str:
         return lbl.unmask(text, mapping)

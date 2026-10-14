@@ -78,6 +78,22 @@ def accounts(text: str) -> list[Entity]:
             for m in regs.ACCOUNT_RE.finditer(text)]
 
 
+def value_key(value: str) -> str:
+    # "Республика  Беларусь" и "республика беларусь" - одно значение, одна метка
+    return " ".join(value.lower().split())
+
+
+def labelled_values(text: str) -> list[Entity]:
+    """Значения из registry/labelled_values: ЕСИА ID, логин, PIN, пол, назначение платежа..."""
+    out = []
+    for lv in regs.LABELLED_VALUES:
+        for m in lv.text.finditer(text):
+            value = m.group(1)
+            out.append(Entity(lv.type, value, m.start(1), m.end(1), value_key(value),
+                              source=sources.REQUISITE))
+    return out
+
+
 def investor_codes(text: str) -> list[Entity]:
     """УКК и торговый код: по подписи, а биржевой "MC" + 10 цифр - и без нее."""
     out = [Entity("INVESTOR", m.group(2), m.start(2), m.end(2), m.group(2).lower(),

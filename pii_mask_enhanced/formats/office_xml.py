@@ -8,7 +8,8 @@ from xml.sax.saxutils import escape as _sax_escape
 
 from ..detection.recognizers.entity import digits
 from ..detection.recognizers.regulars import (ACCOUNT_LABEL_CELL_RE, ACCOUNT_NUM, ID_DOCS,
-                                              INVESTOR_CELL_RE, INVESTOR_LABEL_CELL_RE)
+                                              INVESTOR_CELL_RE, INVESTOR_LABEL_CELL_RE,
+                                              LABELLED_VALUES)
 from ..detection.registry.entity_types import REQUISITE_WORD, requisite_type
 from ..detection.registry.legal_forms import CELL_FORM
 
@@ -55,8 +56,7 @@ def unescape(text: str) -> str:
 
 def escape(text: str, attr: bool = False) -> str:
     """Экранировать текст узла. `\\r` пишем ссылкой, иначе парсер заменит его на `\\n`.
-
-    В значении атрибута еще кавычку и переводы строк: парсер свернул бы их в пробел.
+    Если текст атрибута, то экранируем кавычки и табуляцию.
     """
     if attr:
         return _sax_escape(text, {'"': "&quot;", "\n": "&#10;", "\t": "&#9;", "\r": "&#13;"})
@@ -125,6 +125,10 @@ def cell_label_type(label: str, value: str) -> str | None:
     # код инвестора бывает с буквами ("MC0123400000"), поэтому до проверки на число
     if INVESTOR_LABEL_CELL_RE.match(label) and INVESTOR_CELL_RE.match(value):
         return "INVESTOR"
+    # "ЕСИА ID" | "1000123456", "Пол" | "жен."
+    for lv in LABELLED_VALUES:
+        if lv.cell_label.match(label) and lv.cell_value.match(value):
+            return lv.type
     # "Военный билет" | "АБ 1234567": подпись - название документа, ячейка - его номер
     if any(doc.context and doc.context.search(label) and doc.number.fullmatch(value.strip())
            for doc in ID_DOCS):
