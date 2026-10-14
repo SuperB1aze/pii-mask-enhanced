@@ -105,7 +105,10 @@ VALUES = (
                   r"(?:ЕСИА|госуслуг\w*)(?:[ \t]+(?:ID|идентификатор\w*))?", _digits(5, 15)),
     LabelledValue("MDM ID", "PERSON_ID", r"MDM(?:[ \t]*(?:ID|ид\w*))?", _CODE),
     LabelledValue("табельный номер", "PERSON_ID", r"таб(?:ельн\w*|\.)?[ \t]*(?:номер|№)", _CODE),
-    LabelledValue("логин", "PERSON_ID", r"логин|login|user[ _-]?name|имя[ \t]+пользователя",
+    # разделитель обязателен: "user experience", "account manager" - не логин
+    LabelledValue("логин", "PERSON_ID",
+                  r"логин|login|user[ _-]?name|user|имя[ \t]+пользователя"
+                  r"|уч[её]тн\w*[ \t]+запис\w*|account|аккаунт",
                   # точка - только внутри: "логин: ivanov_i." - конец предложения
                   r"[\w@+-](?:[\w@+-]|\.(?=[\w@+-])){2,63}", needs_sep=True),
     LabelledValue("номер обращения", "PERSON_ID", r"обращени\w*[ \t]*№", _CODE),
@@ -125,7 +128,8 @@ VALUES = (
                   r"CVV2?|CVC2?|CAV2|CID|код\w*[ \t]+(?:безопасности|на[ \t]+оборот\w*)",
                   r"\d{3,4}(?!\d)"),
     LabelledValue("PIN", "SECRET", r"(?:PIN|ПИН)(?:[ -]?код)?", r"\d{4,6}(?!\d)"),
-    LabelledValue("пароль", "SECRET", r"пароль|password|passwd|pwd", r"[^\s,;]{3,64}",
+    # без кавычек: в JSON '"password": "Qwerty123"' закрывающая кавычка - не часть пароля
+    LabelledValue("пароль", "SECRET", r"пароль|password|passwd|pwd", r"[^\s,;\"'`]{3,64}",
                   needs_sep=True),
     LabelledValue("кодовое слово", "SECRET", r"кодов\w*[ \t]+слов\w*", _TO_LINE_END),
 

@@ -63,7 +63,7 @@ class LabelledValueRe:
     """Значение по подписи из registry/labelled_values, собранное в регулярки."""
     name: str
     type: str
-    # в тексте: подпись, разделитель, значение (группа 1)
+    # в тексте: подпись, разделитель, значение - в группе 1 или 2 (см. value_group)
     text: re.Pattern
     # в таблице: подпись и значение в соседних ячейках
     cell_label: re.Pattern
@@ -73,12 +73,21 @@ class LabelledValueRe:
 
 
 def _labelled_value(v) -> LabelledValueRe:
-    # "N" вместо "№" - только перед пробелом или цифрой: иначе это первая буква значения
-    sep = r"[ \t]*[:=][ \t]*" if v.needs_sep else r"[ \t]*(?:(?:[:=№]|N(?=[ \t\d]))[ \t]*)?"
     value = rf"(?-i:{v.value})"
+    if v.needs_sep:
+        # ":", "=", тире; ключ и значение в кавычках: '"login": "ivanov_i"'
+        text = (rf"(?<!\w)(?:{v.label})(?!\w)[\"']?[ \t]*(?:[:=]|[-–—](?=[ \t]))[ \t]*\n?[ \t]*"
+                rf"[\"']?({value})"
+                # подпись одна в строке, значение - вся следующая: "Логин\nivanov_i".
+                # "логин\nвыдается администратором" - не поле, а перенос фразы
+                rf"|(?<![^\n])[ \t]*(?:{v.label})[ \t]*\n[ \t]*({value})(?=[ \t]*(?:\n|$))")
+    else:
+        # "N" вместо "№" - только перед пробелом или цифрой: иначе это первая буква значения
+        text = (rf"(?<!\w)(?:{v.label})(?!\w)[ \t]*(?:(?:[:=№]|N(?=[ \t\d]))[ \t]*)?\n?[ \t]*"
+                rf"({value})")
     return LabelledValueRe(
         v.name, v.type,
-        re.compile(rf"(?<!\w)(?:{v.label})(?!\w){sep}\n?[ \t]*({value})", re.IGNORECASE),
+        re.compile(text, re.IGNORECASE),
         re.compile(rf"^\s*(?:{v.label})\s*(?:№|N)?\s*[:=]?\s*$", re.IGNORECASE),
         re.compile(rf"^\s*{value}\s*$"),
         digits if v.digits_key else text_key,
@@ -86,3 +95,8 @@ def _labelled_value(v) -> LabelledValueRe:
 
 
 LABELLED_VALUES = tuple(_labelled_value(v) for v in VALUES)
+
+
+def value_group(m: re.Match) -> int:
+    """Группа со значением: у подписи с разделителем два варианта записи, у остальных один."""
+    return 1 if m.group(1) is not None else 2

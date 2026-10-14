@@ -19,8 +19,12 @@ def profile_nicks(text: str) -> list[Entity]:
 
 
 def emails(text: str) -> list[Entity]:
+    # "https://ivanov:Qwerty123@host" - пароль и хост, а не почта
+    creds = [m.span() for m in regs.URL_CREDS_RE.finditer(text)]
     return [Entity("EMAIL", m.group(), m.start(), m.end(), m.group().lower())
-            for m in regs.EMAIL_RE.finditer(text) if not regs.FAKE_EMAIL_RE.match(m.group())]
+            for m in regs.EMAIL_RE.finditer(text)
+            if not regs.FAKE_EMAIL_RE.match(m.group())
+            and not any(overlaps(m.span(), c) for c in creds)]
 
 
 def telegram(text: str) -> list[Entity]:
@@ -41,7 +45,13 @@ def urls(text: str) -> list[Entity]:
         for m in rx.finditer(text):
             g = 1 if rx.groups else 0
             url = m.group(g).rstrip(".,;:!?")
-            span = (m.start(g), m.start(g) + len(url))
+            start = m.start(g)
+            # логин и пароль в адресе закрываются отдельно (finders/technical): адрес - с хоста
+            creds = regs.URL_CREDS_RE.search(url) if rx is regs.URL_SCHEME_RE else None
+            if creds:
+                start += creds.end()
+                url = url[creds.end():]
+            span = (start, start + len(url))
             if _host(url) in helpers.STOP_HOSTS or any(overlaps(span, t) for t in taken):
                 continue
             taken.append(span)

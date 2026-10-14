@@ -76,8 +76,9 @@ def labelled_values(text: str) -> list[Entity]:
     out = []
     for lv in regs.LABELLED_VALUES:
         for m in lv.text.finditer(text):
-            value = m.group(1)
-            out.append(Entity(lv.type, value, m.start(1), m.end(1), lv.key(value),
+            g = regs.value_group(m)
+            value = m.group(g)
+            out.append(Entity(lv.type, value, m.start(g), m.end(g), lv.key(value),
                               source=sources.REQUISITE))
     return out
 

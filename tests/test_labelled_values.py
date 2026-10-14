@@ -80,6 +80,40 @@ def test_citizenship_lookalikes_untouched(src):
     assert _mask(src) == src
 
 
+# --- логин ---
+
+@pytest.mark.parametrize("src, expected", [
+    ("Логин - ivanov_i", "Логин - {{PERSON_ID_1}}"),
+    ("Логин\nivanov_i", "Логин\n{{PERSON_ID_1}}"),
+    ("user=ivanov_i", "user={{PERSON_ID_1}}"),
+    ("учетная запись: ivanov_i", "учетная запись: {{PERSON_ID_1}}"),
+    ("account: ivanov_i", "account: {{PERSON_ID_1}}"),
+    ('{"login": "ivanov_i", "password": "Qwerty123"}',
+     '{"login": "{{PERSON_ID_1}}", "password": "{{SECRET_1}}"}'),
+    ("логин/пароль: ivanov_i / Qwerty123", "логин/пароль: {{PERSON_ID_1}} / {{SECRET_1}}"),
+    ("https://ivanov:Qwerty123@ftp.example.ru/files", "https://{{PERSON_ID_1}}:{{SECRET_1}}@{{URL_1}}"),
+    (r"CORP\ivanov_i вошел в систему", "{{PERSON_ID_1}} вошел в систему"),
+])
+def test_login_forms(src, expected):
+    assert _mask(src) == expected
+
+
+@pytest.mark.parametrize("src", [
+    "логин\nвыдается администратором",   # перенос фразы, а не поле анкеты
+    "account manager Петров",            # без разделителя - не подпись
+    r"C:\WINDOWS\system32",              # путь, а не доменная учетка
+    r"\\SERVER\share",
+    "вход под пользователем ivanov_i",   # без подписи логин не отличить от слова
+])
+def test_login_lookalikes(src):
+    assert "{{PERSON_ID" not in _mask(src)
+
+
+def test_cookie_uid_stays_session():
+    """"uid" - имя cookie: значение остается сессией, а не логином."""
+    assert _mask("Cookie: uid=abc123") == "Cookie: uid={{SESSION_1}}"
+
+
 def test_citizenship_does_not_take_the_surname():
     """Страна - одно слово или устойчивое из двух; дальше уже фамилия."""
     assert _mask("гражданин Российской Федерации Белоусов") == "гражданин {{PERSONAL_1}} Белоусов"
@@ -157,6 +191,7 @@ def test_position_without_colon_untouched(src):
     ("Специальность", "08.03.01", "POSITION"),
     ("ЕСИА ID", "1000123456", "PERSON_ID"),
     ("Логин", "ivanov_i", "PERSON_ID"),
+    ("Учетная запись", "ivanov_i", "PERSON_ID"),
     ("Пол", "жен.", "PERSONAL"),
     ("Звание", "капитан", "PERSONAL"),
     ("Учёная степень", "к.т.н.", "PERSONAL"),

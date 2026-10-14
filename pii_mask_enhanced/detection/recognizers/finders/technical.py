@@ -5,7 +5,7 @@ import ipaddress
 
 from ...registry import sources
 from .. import regulars as regs
-from ..entity import Entity, digits
+from ..entity import Entity, digits, text_key
 
 
 def _ip_ok(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -55,6 +55,20 @@ def sessions(text: str) -> list[Entity]:
             start = base + pair.start(2)
             out.append(Entity("SESSION", value, start, start + len(value), value,
                               source=sources.REQUISITE))
+    return out
+
+
+def credentials(text: str) -> list[Entity]:
+    """Логин и пароль парой: "логин/пароль: a / b", "https://a:b@host", доменное "CORP\\a"."""
+    out = []
+    for rx in (regs.LOGIN_PASSWORD_RE, regs.URL_CREDS_RE):
+        for m in rx.finditer(text):
+            out.append(Entity("PERSON_ID", m.group(1), m.start(1), m.end(1), text_key(m.group(1)),
+                              source=sources.REQUISITE))
+            out.append(Entity("SECRET", m.group(2), m.start(2), m.end(2), m.group(2),
+                              source=sources.REQUISITE))
+    out += [Entity("PERSON_ID", m.group(), m.start(), m.end(), text_key(m.group()))
+            for m in regs.DOMAIN_LOGIN_RE.finditer(text)]
     return out
 
 

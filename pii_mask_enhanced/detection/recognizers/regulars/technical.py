@@ -32,6 +32,15 @@ COOKIE_PAIR_RE = re.compile(r"(?:^|;)[ \t]*([^=;\s]+)=([^;\r\n]+)")
 # атрибуты Set-Cookie - не данные
 COOKIE_ATTRS = frozenset({"path", "domain", "expires", "max-age", "samesite"})
 
+# Учетные данные. Пара "логин/пароль: ivanov / Qwerty123": значения по порядку подписей
+LOGIN_PASSWORD_RE = re.compile(
+    r"(?<!\w)(?:логин|login)[ \t]*/[ \t]*(?:пароль|password)[ \t]*[:=][ \t]*"
+    r"(\S+?)[ \t]*/[ \t]*([^\s,;]+)", re.IGNORECASE)
+# в адресе: "https://ivanov:Qwerty123@host" - хост остается адресом (finders/contacts)
+URL_CREDS_RE = re.compile(r"(?<=://)([^:/@\s]+):([^@/\s]+)@")
+# доменная учетная запись Windows "CORP\ivanov_i"; "\" вокруг - уже путь: "C:\WINDOWS\system32"
+DOMAIN_LOGIN_RE = re.compile(r"(?<![\w\\:])[A-Z][A-Z0-9-]{1,14}\\[A-Za-z][\w.-]{1,63}(?![\w\\])")
+
 # строка браузера: заголовок или узнаваемое начало "Mozilla/5.0 (...)"
 USER_AGENT_HEADER_RE = re.compile(r"User-Agent[ \t]*[:=][ \t]*[\"']?([^\r\n\"']+)", re.IGNORECASE)
 USER_AGENT_RE = re.compile(r"(?<![\w/])Mozilla/\d\.\d[ \t]+\([^)\n]*\)[^\r\n\"']*")
