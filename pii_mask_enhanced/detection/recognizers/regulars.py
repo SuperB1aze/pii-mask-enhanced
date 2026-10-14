@@ -1,11 +1,13 @@
 import re
 from dataclasses import dataclass
+from typing import Callable
 
 from ..registry.entity_types import REQUISITE_WORD
 from ..registry.id_documents import DOCS
 from ..registry.labelled_values import VALUES
 from ..registry.legal_forms import ORG_FORM, TRAILING_FORM
 from . import helpers
+from .entity import digits, text_key
 
 FAKE_PHONE_CODE = "000"
 FAKE_EMAIL_RE = re.compile(r"^user\d+@example\.com$", re.IGNORECASE)
@@ -99,16 +101,20 @@ class LabelledValueRe:
     # в таблице: подпись и значение в соседних ячейках
     cell_label: re.Pattern
     cell_value: re.Pattern
+    # ключ консистентности находки: одинаковый ключ - одна метка
+    key: Callable[[str], str]
 
 
 def _labelled_value(v) -> LabelledValueRe:
-    sep = r"[ \t]*[:=][ \t]*" if v.needs_sep else r"[ \t]*(?:[:=№][ \t]*)?"
+    # "N" вместо "№" - только перед пробелом или цифрой: иначе это первая буква значения
+    sep = r"[ \t]*[:=][ \t]*" if v.needs_sep else r"[ \t]*(?:(?:[:=№]|N(?=[ \t\d]))[ \t]*)?"
     value = rf"(?-i:{v.value})"
     return LabelledValueRe(
         v.name, v.type,
         re.compile(rf"(?<!\w)(?:{v.label})(?!\w){sep}\n?[ \t]*({value})", re.IGNORECASE),
-        re.compile(rf"^\s*(?:{v.label})\s*[:=№]?\s*$", re.IGNORECASE),
+        re.compile(rf"^\s*(?:{v.label})\s*(?:№|N)?\s*[:=]?\s*$", re.IGNORECASE),
         re.compile(rf"^\s*{value}\s*$"),
+        digits if v.digits_key else text_key,
     )
 
 
@@ -184,49 +190,8 @@ DOC_SEGMENT_SEP_RE = re.compile(r"[ \t]?[/-][ \t]?")
 # серийный номер сертификата ЭП
 CERT_RE = re.compile(r"(?<![0-9A-Za-z])[0-9A-Fa-f]{16,64}(?![0-9A-Za-z])")
 
-# счет - только рядом с подписью, иначе попадут штрихкоды
-# "р/с", "к/сч", "Сч.", "номер счета", "расчетный счет", "корр.счет", "счет получателя"
-ACCOUNT_LABEL = (
-    r"(?:[ркл]/сч?"
-    r"|(?:номер[ \t]+)?(?:(?:расч|корр|лицев|банковск|текущ|сберегат|депозитн)\w*\.?[ \t]*)?"
-    r"сч[её]т\w*(?:[ \t]+(?:получател|плательщик|клиент|организаци|банк)\w*)?"
-    r"|сч\.?)"
-)
-# 20 цифр слитно или группами: "4081 7810 0999 1000 4312", "40817.810.0.9991.0004312"
-ACCOUNT_NUM = r"\d(?:[ .\-]?\d){19}"
-ACCOUNT_RE = re.compile(
-    rf"(?<![/\w])({ACCOUNT_LABEL})"
-    rf"[ \t]*(?:№|N|:)?[ \t]*\n?[ \t]*({ACCOUNT_NUM})(?!\d)(?![.\-]\d)",
-    re.IGNORECASE,
-)
-# подпись счета отдельной ячейкой таблицы (formats/office_xml)
-ACCOUNT_LABEL_CELL_RE = re.compile(rf"^\s*{ACCOUNT_LABEL}\s*(?:№|N)?\s*:?\s*$", re.IGNORECASE)
-
-# Код инвестора: формат свой у каждого брокера и биржи, поэтому - только по подписи.
-# "код" целым словом в падежах: "кодекс клиента" - не подпись.
-_KOD = r"код(?:а|у|ом|ы|ов)?(?!\w)"
-INVESTOR_LABEL = (
-    rf"(?:УКК|уникальн\w*[ \t]+{_KOD}(?:[ \t]+клиент\w*)?"
-    rf"|торгов\w*[ \t]+{_KOD}(?:[ \t]+клиент\w*)?"
-    rf"|{_KOD}[ \t]+(?:инвестор|клиент)\w*|клиентск\w*[ \t]+{_KOD})"
-)
-# код с хотя бы одной цифрой: "торговый код присваивается биржей" - не код.
-# Точка - только внутри кода, концом предложения ее не считаем. Код берется целиком:
-# огрызок за маской ("L01" + "+00000F00") выдает код не хуже полного.
-INVESTOR_VALUE = (r"(?=[\w/+.-]*\d)[A-Za-zА-Яа-яЁё0-9](?:[\w/+-]|\.(?=[\w/+-])){2,24}"
-                  r"(?!\.?[\w/+-])")
-INVESTOR_RE = re.compile(
-    rf"(?<!\w)({INVESTOR_LABEL})"
-    # "(УКК)" за полным названием и до трех слов: "код клиента на фондовом рынке"
-    rf"(?:[ \t]*\([^)\n]{{1,20}}\))?(?:[ \t]+[^\W\d_]+){{0,3}}?"
-    rf"[ \t]*(?:№|:)?[ \t]*\n?[ \t]*({INVESTOR_VALUE})",
-    re.IGNORECASE,
-)
-INVESTOR_LABEL_CELL_RE = re.compile(
-    rf"^\s*{INVESTOR_LABEL}(?:\s*\([^)]{{1,20}}\))?\s*(?:№)?\s*:?\s*$", re.IGNORECASE
-)
-INVESTOR_CELL_RE = re.compile(rf"^\s*{INVESTOR_VALUE}\s*$")
-# торговый код фондового рынка Мосбиржи узнается и без подписи; М и С бывают кириллицей
+# Счет и код инвестора по подписи - в registry/labelled_values.
+# Торговый код фондового рынка Мосбиржи узнается и без подписи; М и С бывают кириллицей
 MOEX_CODE_RE = re.compile(r"(?<!\w)[MМ][CС]\d{10}(?!\w)")
 
 CAPS_FIO_RE = re.compile(

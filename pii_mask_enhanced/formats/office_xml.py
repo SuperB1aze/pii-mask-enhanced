@@ -6,10 +6,8 @@ import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape as _sax_escape
 
-from ..detection.recognizers.entity import digits
-from ..detection.recognizers.regulars import (ACCOUNT_LABEL_CELL_RE, ACCOUNT_NUM, ID_DOCS,
-                                              INVESTOR_CELL_RE, INVESTOR_LABEL_CELL_RE,
-                                              LABELLED_VALUES)
+from ..detection.recognizers.finders.numbers import id_doc_key
+from ..detection.recognizers.regulars import ID_DOCS, LABELLED_VALUES
 from ..detection.registry.entity_types import REQUISITE_WORD, requisite_type
 from ..detection.registry.legal_forms import CELL_FORM
 
@@ -35,8 +33,8 @@ _WORD_SPLIT = re.compile(r"[^\w\-]+")
 
 # Подпись реквизита отдельной ячейкой: число рядом с ней считается реквизитом.
 REQ_LABEL_RE = re.compile(rf"^\s*({REQUISITE_WORD})\s*:?\s*$", re.IGNORECASE)
-# число в ячейке; счет бывает разбит на группы
-NUMBER_CELL_RE = re.compile(rf"^\s*(?:\d{{5,20}}|{ACCOUNT_NUM})\s*$")
+# число у подписи реквизита; счет с группами разбирает справочник значений по подписи
+DIGITS_CELL_RE = re.compile(r"^\d{5,20}$")
 
 
 def unescape(text: str) -> str:
@@ -120,39 +118,43 @@ def counterparty_words(values: list[str]) -> frozenset[str]:
     return frozenset(names)
 
 
-def cell_label_type(label: str, value: str) -> str | None:
-    """Тип числа по подписи в соседней ячейке: "Р/с" | "40817..." -> ACCOUNT."""
-    # код инвестора бывает с буквами ("MC0123400000"), поэтому до проверки на число
-    if INVESTOR_LABEL_CELL_RE.match(label) and INVESTOR_CELL_RE.match(value):
-        return "INVESTOR"
-    # "ЕСИА ID" | "1000123456", "Пол" | "жен."
+def cell_label(label: str, value: str) -> tuple[str, str] | None:
+    """Тип и ключ значения по подписи в соседней ячейке: "Р/с" | "40817..." -> ACCOUNT.
+
+    Ключ строит та же ветка, что опознала значение, - как у находки в тексте: иначе
+    одно значение в ячейке и в строке получило бы две метки.
+    """
+    value = value.strip()
+    # "Р/с" | "40817...", "ЕСИА ID" | "1000123456", "Пол" | "жен."
     for lv in LABELLED_VALUES:
         if lv.cell_label.match(label) and lv.cell_value.match(value):
-            return lv.type
+            return lv.type, lv.key(value)
     # "Военный билет" | "АБ 1234567": подпись - название документа, ячейка - его номер
-    if any(doc.context and doc.context.search(label) and doc.number.fullmatch(value.strip())
+    if any(doc.context and doc.context.search(label) and doc.number.fullmatch(value)
            for doc in ID_DOCS):
-        return "IDDOC"
-    if not NUMBER_CELL_RE.match(value):
-        return None
-    num = digits(value)
-    if ACCOUNT_LABEL_CELL_RE.match(label):
-        # счет только из 20 цифр
-        return "ACCOUNT" if len(num) == 20 else None
+        return "IDDOC", id_doc_key(value)
     m = REQ_LABEL_RE.match(label)
-    return requisite_type(m.group(1), num) if m else None
+    if m and DIGITS_CELL_RE.match(value):
+        return requisite_type(m.group(1), value), value
+    return None
 
 
-def numbers_after_labels(values: list[str]) -> dict[str, str]:
-    """Числа сразу за подписью реквизита и их тип: ячейки таблицы Word идут подряд по строке."""
-    out: dict[str, str] = {}
+def cell_label_type(label: str, value: str) -> str | None:
+    """Только тип из cell_label."""
+    hit = cell_label(label, value)
+    return hit[0] if hit else None
+
+
+def numbers_after_labels(values: list[str]) -> dict[str, tuple[str, str]]:
+    """Значения сразу за подписью: тип и ключ. Ячейки таблицы Word идут подряд по строке."""
+    out: dict[str, tuple[str, str]] = {}
     prev = ""
     for value in values:
         if not value.strip():
             continue
-        etype = cell_label_type(prev, value)
-        if etype:
-            out[value.strip()] = etype
+        hit = cell_label(prev, value)
+        if hit:
+            out[value.strip()] = hit
         prev = value
     return out
 

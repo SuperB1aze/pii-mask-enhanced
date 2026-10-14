@@ -17,10 +17,7 @@ import re
 
 from ..detection.ner import morph
 from ..detection.ner.ner import NatashaNer
-from ..detection.recognizers.entity import Entity, digits
-from ..detection.recognizers.finders.numbers import id_doc_key
-from ..detection.recognizers.finders.requisites import value_key
-from ..detection.registry.labelled_values import TYPES as LABELLED_TYPES
+from ..detection.recognizers.entity import Entity
 from ..detection.recognizers.finders.spans import overlaps
 from ..detection.recognizers.recognizers import find_format_entities
 from ..detection.recognizers.regulars import ORG_FORM_RE
@@ -73,8 +70,8 @@ class Masker:
         self.inn_needs_label = inn_needs_label
         # Числа, у которых подпись реквизита стоит в соседней ячейке таблицы.
         self.trusted_numbers = frozenset(trusted_numbers)
-        # Те же числа с типом по подписи: ячейка "40817..." рядом с "Р/с" - ACCOUNT
-        self.labelled_cells: dict[str, str] = {}
+        # Те же значения с типом и ключом по подписи: "40817..." рядом с "Р/с" - ACCOUNT
+        self.labelled_cells: dict[str, tuple[str, str]] = {}
         # типы, которые принимаем от NER
         self._ner_allowed = self.types if self.ner_types is None else self.types & self.ner_types
         self._use_ner = ner and bool({"PERSON", "ORG", "LOC"} & self._ner_allowed)
@@ -99,9 +96,10 @@ class Masker:
             return True
         return ent.source != sources.BARE or ent.text.strip() in self.trusted_numbers
 
-    def with_hints(self, supported_names: frozenset[str], labelled: dict[str, str]) -> Masker:
+    def with_hints(self, supported_names: frozenset[str],
+                   labelled: dict[str, tuple[str, str]]) -> Masker:
         """Копия с подсказками документа; заданные явно не заменяются.
-        labelled - числа с подписью в соседней ячейке и их тип (office_xml.cell_label_type).
+        labelled - значения с подписью в соседней ячейке: тип и ключ (office_xml.cell_label).
         """
         clone = copy.copy(self)
         if self.ner_person_needs_fio and not self.supported_names:
@@ -149,16 +147,11 @@ class Masker:
         ]
         # Ячейка - число, подписанное соседней ячейкой: сама она подписи не содержит
         cell = text.strip()
-        cell_type = self.labelled_cells.get(cell)
-        if cell_type in self.types:
+        hit = self.labelled_cells.get(cell)
+        if hit and hit[0] in self.types:
+            # тип и ключ - от того, кто опознал ячейку (office_xml.cell_label)
+            cell_type, key = hit
             start = text.index(cell)
-            # ключ как у находки в тексте: код инвестора и документ - с буквами, реквизиты - по цифрам
-            if cell_type == "INVESTOR" or cell_type in LABELLED_TYPES:
-                key = value_key(cell)
-            elif cell_type == "IDDOC":
-                key = id_doc_key(cell)
-            else:
-                key = digits(cell)
             candidates.append(Entity(cell_type, cell, start, start + len(cell), key,
                                      source=sources.REQUISITE))
         if self._use_ner:

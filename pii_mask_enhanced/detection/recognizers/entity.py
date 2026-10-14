@@ -19,3 +19,8 @@ class Entity:
 
 def digits(s: str) -> str:
     return "".join(c for c in s if c.isdigit())
+
+
+def text_key(s: str) -> str:
+    # "Республика  Беларусь" и "республика беларусь" - одно значение, одна метка
+    return " ".join(s.lower().split())

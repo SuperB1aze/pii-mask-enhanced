@@ -82,4 +82,5 @@ def test_cell_label_type(label, value, expected):
 
 def test_numbers_after_labels_in_word_table():
     values = ["Р/с", ACC, "КПП", "770101001", "Сумма", "15000"]
-    assert numbers_after_labels(values) == {ACC: "ACCOUNT", "770101001": "KPP"}
+    # тип и ключ - как у находки в тексте: счет по цифрам
+    assert numbers_after_labels(values) == {ACC: ("ACCOUNT", ACC), "770101001": ("KPP", "770101001")}

@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import zipfile
 from pathlib import Path
-from .office_xml import (T_RE, cell_label_type, clear_attrs, counterparty_words,
+from .office_xml import (T_RE, cell_label, clear_attrs, counterparty_words,
                          escape, mask_values, runs_text, tag, unknown_text_parts, unescape,
                          write_copy)
 
@@ -182,9 +182,9 @@ def _sheet_grid(z: zipfile.ZipFile, name: str, shared: list[str]) -> dict[tuple[
     return grid
 
 
-def labelled_numbers(src: str | Path) -> dict[str, str]:
-    # числа и их тип по подписи слева или сверху ("A9=ИНН", "B9=6083778353").
-    out: dict[str, str] = {}
+def labelled_numbers(src: str | Path) -> dict[str, tuple[str, str]]:
+    # значения, их тип и ключ по подписи слева или сверху ("A9=ИНН", "B9=6083778353").
+    out: dict[str, tuple[str, str]] = {}
     with zipfile.ZipFile(src) as z:
         shared = []
         if "xl/sharedStrings.xml" in z.namelist():
@@ -194,9 +194,9 @@ def labelled_numbers(src: str | Path) -> dict[str, str]:
             grid = _sheet_grid(z, name, shared)
             for (row, col), value in grid.items():
                 for label in (grid.get((row, col - 1), ""), grid.get((row - 1, col), "")):
-                    etype = cell_label_type(label, value)
-                    if etype:
-                        out[value.strip()] = etype
+                    hit = cell_label(label, value)
+                    if hit:
+                        out[value.strip()] = hit
                         break
     return out
 

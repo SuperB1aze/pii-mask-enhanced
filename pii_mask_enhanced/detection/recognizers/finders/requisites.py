@@ -5,7 +5,7 @@ from ...registry import sources
 from ...registry.entity_types import requisite_type
 from .. import helpers
 from .. import regulars as regs
-from ..entity import Entity, digits
+from ..entity import Entity, text_key
 
 
 def docrefs(text: str) -> list[Entity]:
@@ -71,37 +71,21 @@ def labelled(text: str) -> list[Entity]:
             for m in regs.REQUISITE_RE.finditer(text)]
 
 
-def accounts(text: str) -> list[Entity]:
-    # ключ - цифры: слитный и разбитый на группы номер получают одну метку
-    return [Entity("ACCOUNT", m.group(2), m.start(2), m.end(2), digits(m.group(2)),
-                   source=sources.REQUISITE)
-            for m in regs.ACCOUNT_RE.finditer(text)]
-
-
-def value_key(value: str) -> str:
-    # "Республика  Беларусь" и "республика беларусь" - одно значение, одна метка
-    return " ".join(value.lower().split())
-
-
 def labelled_values(text: str) -> list[Entity]:
-    """Значения из registry/labelled_values: ЕСИА ID, логин, PIN, пол, назначение платежа..."""
+    """Значения из registry/labelled_values: счет, код инвестора, ЕСИА ID, логин, PIN, пол..."""
     out = []
     for lv in regs.LABELLED_VALUES:
         for m in lv.text.finditer(text):
             value = m.group(1)
-            out.append(Entity(lv.type, value, m.start(1), m.end(1), value_key(value),
+            out.append(Entity(lv.type, value, m.start(1), m.end(1), lv.key(value),
                               source=sources.REQUISITE))
     return out
 
 
-def investor_codes(text: str) -> list[Entity]:
-    """УКК и торговый код: по подписи, а биржевой "MC" + 10 цифр - и без нее."""
-    out = [Entity("INVESTOR", m.group(2), m.start(2), m.end(2), m.group(2).lower(),
-                  source=sources.REQUISITE)
-           for m in regs.INVESTOR_RE.finditer(text)]
-    out += [Entity("INVESTOR", m.group(), m.start(), m.end(), m.group().lower())
+def moex_codes(text: str) -> list[Entity]:
+    """Торговый код Мосбиржи "MC" + 10 цифр - единственный код инвестора без подписи."""
+    return [Entity("INVESTOR", m.group(), m.start(), m.end(), text_key(m.group()))
             for m in regs.MOEX_CODE_RE.finditer(text)]
-    return out
 
 
 def doc_numbers(text: str) -> list[Entity]:
