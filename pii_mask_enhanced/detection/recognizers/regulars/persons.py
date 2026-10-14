@@ -1,6 +1,7 @@
 """Люди: ФИО капсом и с инициалами, дата и год рождения."""
 import re
 
+from ...registry.labelled_values import PERSON_TERMS
 from .. import helpers
 
 CAPS_FIO_RE = re.compile(
@@ -24,6 +25,12 @@ BIRTH_DATE_RE = re.compile(
     r"(?:родил(?:ся|ась)|дата\s+рожд\w*\.?\s*[:\-]?|д\.?\s?р\.?\s*[:\-]?)\s*"
     rf"({helpers.DATE})",
     re.IGNORECASE)
+# звание, степень, семейное положение, возраст - рядом с найденным ФИО (engine/propagation)
+PERSON_TERMS_RE = re.compile(
+    "|".join(rf"(?<!\w)(?:{t})(?!\w)" for t in PERSON_TERMS), re.IGNORECASE)
+# сколько знаков до и после ФИО считается "рядом"; дальше строки окно не идет
+PERSON_TERMS_WINDOW = 50
+
 # год рождения: "1985 г.р.", "г.р. 1985"; точка обязательна, иначе "500 гр" - граммы
 BIRTH_YEAR_RE = re.compile(
     r"(?<!\d)((?:19|20)\d{2})[ \t]*г\.[ \t]?р\.?(?!\w)"

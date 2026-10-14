@@ -187,7 +187,8 @@ class Masker:
         if details:
             candidates += details
             candidates += prop.repeats(
-                text, {e.text.strip() for e in details if e.source != sources.EXPIRY}, candidates)
+                text, {e.text.strip() for e in details if e.source not in sources.NO_REPEAT},
+                candidates)
 
         candidates += prop.org_case_repeats(text, candidates)
 

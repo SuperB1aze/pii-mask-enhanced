@@ -8,6 +8,11 @@ DOCREF = "docref"          # номер за словом "договор", "с�
 DOCDATE = "docdate"        # дата за номером документа
 ISSUE = "issue"            # дата и орган выдачи паспорта или документа
 EXPIRY = "expiry"          # срок карты
+PERSON_TERM = "person-term"  # звание, степень, возраст рядом с ФИО
+
+# короткие значения, которые повторами по тексту не разносим: "12/27", "замужем" в другом
+# месте текста - уже не про того же человека или карту
+NO_REPEAT = frozenset({EXPIRY, PERSON_TERM})
 REPEAT = "repeat"          # повтор уже найденного значения
 PERSON_TOKEN = "person-token"
 BIRTH = "birth"

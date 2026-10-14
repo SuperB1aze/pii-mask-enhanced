@@ -108,6 +108,45 @@ def test_issuer_cell_label(label, value, expected):
     assert cell_label_type(label, value) == expected
 
 
+# --- звание, степень, семейное положение, возраст рядом с ФИО ---
+
+@pytest.mark.parametrize("src, expected", [
+    ("капитан 2-го ранга Петров П.П.", "{{PERSONAL_1}} {{PERSON_1}}"),
+    ("полковник юстиции Сидоров И.И.", "{{PERSONAL_1}} {{PERSON_1}}"),
+    ("генерал-майор Иванов И.И.", "{{PERSONAL_1}} {{PERSON_1}}"),
+    ("Иванов И.И., к.т.н., доцент кафедры", "{{PERSON_1}}, {{PERSONAL_1}}, {{PERSONAL_2}} кафедры"),
+    ("Смирнов С.С., д.ф.-м.н., профессор", "{{PERSON_1}}, {{PERSONAL_1}}, {{PERSONAL_2}}"),
+    ("Сидоров И.И., холост, 41 год", "{{PERSON_1}}, {{PERSONAL_1}}, {{PERSONAL_2}}"),
+])
+def test_person_terms_near_name(src, expected):
+    """Звание стоит до ФИО, степень и возраст - после: окно с обеих сторон."""
+    assert _mask(src) == expected
+
+
+@pytest.mark.parametrize("src", [
+    "капитан команды забил гол",                 # без человека рядом - обычные слова
+    "профессор кафедры читает лекцию",
+    "гарантия 5 лет",
+    "Майор Гром - фильм 2017 года",
+    "в лице Генерального директора Иванова И.И.",  # "генеральный" - не звание "генерал"
+])
+def test_person_terms_without_person_untouched(src):
+    out = _mask(src)
+    assert "{{PERSONAL" not in out, out
+
+
+def test_person_terms_stay_on_the_line():
+    """Окно не переходит строку: следующая - уже про другое."""
+    out = _mask("Иванов И.И. работает в отделе\nзамужем - не про него")
+    assert out.endswith("\nзамужем - не про него")
+
+
+def test_person_terms_not_spread_across_text():
+    """"замужем" рядом с одним человеком не закрывает такое же слово про другого."""
+    out = _mask("Петрова А.С., замужем.\nВопрос: замужем ли сотрудники отдела?")
+    assert out.endswith("Вопрос: замужем ли сотрудники отдела?")
+
+
 # --- срок карты ---
 
 @pytest.mark.parametrize("src, expected", [

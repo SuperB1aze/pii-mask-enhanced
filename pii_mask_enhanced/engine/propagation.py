@@ -160,11 +160,28 @@ def _after_card(text: str, ent: Entity) -> list[Entity]:
 
 
 # тип якоря -> что искать сразу за ним
+def _near_person(text: str, ent: Entity) -> list[Entity]:
+    # звание стоит до ФИО ("капитан Иванов"), степень и возраст - после ("Иванов, к.т.н., 38 лет");
+    # окно не переходит строку: на следующей - уже про другое
+    line_start = text.rfind("\n", 0, ent.start) + 1
+    line_end = text.find("\n", ent.end)
+    line_end = len(text) if line_end < 0 else line_end
+    out = []
+    for lo, hi in ((max(line_start, ent.start - regs.PERSON_TERMS_WINDOW), ent.start),
+                   (ent.end, min(line_end, ent.end + regs.PERSON_TERMS_WINDOW))):
+        out += [Entity("PERSONAL", m.group(), m.start(), m.end(), m.group().lower(),
+                       source=sources.PERSON_TERM)
+                for m in regs.PERSON_TERMS_RE.finditer(text, lo, hi)]
+    return out
+
+
+# тип якоря -> что искать рядом с ним
 _AFTER = {
     "DOCREF": _after_docref,
     "PASSPORT": _after_document,
     "IDDOC": _after_document,
     "CARD": _after_card,
+    "PERSON": _near_person,
 }
 
 
