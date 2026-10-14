@@ -1,6 +1,13 @@
 import re
 
+from ..registry.legal_forms import ORG_FORM, SHORT
+
 TYPE_MAP = {"PER": "PERSON", "ORG": "ORG", "LOC": "LOC"}
+
+# Организация от NER без названия: одна форма ("форма: АО") или сокращенная форма и
+# строчное слово ("ООО по 44-ФЗ")
+BARE_LEGAL_FORM = re.compile(
+    rf"^\W*(?:{ORG_FORM}\W*$|(?-i:(?:{'|'.join(SHORT)})[ \t]+[а-яё]))", re.IGNORECASE)
 
 # Граммемы личного имени в pymorphy: имя, фамилия, отчество.
 NAME_GRAMMEMES = {"Name", "Surn", "Patr"}

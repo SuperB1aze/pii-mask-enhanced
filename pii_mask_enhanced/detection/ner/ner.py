@@ -146,6 +146,8 @@ class NatashaNer:
             return False
         if morph.is_stop_term(ent.text):
             return False
+        if ent.type == "ORG" and helpers.BARE_LEGAL_FORM.match(ent.text):
+            return False
         if ent.type == "PERSON":
             tokens = ent.text.split()
             if len(tokens) == 1:

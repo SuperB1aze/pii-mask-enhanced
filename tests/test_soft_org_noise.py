@@ -8,6 +8,8 @@
 Маска вместо термина не утечка, но документ становится нечитаем ни человеком,
 ни моделью - ровно то, ради чего строгий режим и вводили.
 """
+import pytest
+
 from pii_mask_enhanced.engine.core import Masker
 
 
@@ -116,6 +118,25 @@ def test_own_name_in_quotes_without_generic_word():
     out = mask('Бизнесы: 2002-2006 “Romashka” смс агрегатор, затем "Vasilek" сервис')
     assert "Romashka" not in out, out
     assert "Vasilek" not in out, out
+
+
+@pytest.mark.parametrize("src", [
+    "организационно-правовая форма: АО",
+    "договор с любым ООО по 44-ФЗ",
+    "АО в лице директора",
+])
+def test_bare_legal_form_is_not_a_company(src):
+    """Форма без названия никого не называет, а под маской фраза теряет смысл."""
+    out = mask(src)
+    assert "{{ORG" not in out, out
+
+
+@pytest.mark.parametrize("src", [
+    "Работал в ООО Вектор",
+    "Фонд развития интернет-инициатив",   # родовое слово и строчные - это название
+])
+def test_named_company_still_masked(src):
+    assert "{{ORG" in mask(src)
 
 
 def test_quoted_phrase_is_not_a_name():
