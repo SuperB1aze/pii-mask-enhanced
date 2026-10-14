@@ -82,7 +82,54 @@ def test_label_without_value_untouched(src):
     assert _mask(src) == src
 
 
+# --- должность и специальность: скрываются везде, кроме набора resume ---
+
+POSITIONS = [
+    ("Должность: ведущий инженер-конструктор отдела 12", "Должность: {{POSITION_1}}"),
+    ("Занимаемая должность: главный бухгалтер", "Занимаемая должность: {{POSITION_1}}"),
+    ("Профессия: электромонтер 4 разряда", "Профессия: {{POSITION_1}}"),
+    ("Специальность: 08.03.01 Строительство", "Специальность: {{POSITION_1}}"),
+]
+
+
+@pytest.mark.parametrize("preset", [None, "accounting"])
+@pytest.mark.parametrize("src, expected", POSITIONS)
+def test_position_masked(src, expected, preset):
+    from pii_mask_enhanced.engine.settings import Options, build_masker
+
+    m, _ = build_masker(Options(preset=preset, ner=False), lambda: None)
+    assert m.mask(src)[0] == expected
+
+
+@pytest.mark.parametrize("src, _", POSITIONS)
+def test_resume_preset_keeps_position(src, _):
+    """Должность - содержание резюме: без нее модель не ответит о кандидате ничего."""
+    from pii_mask_enhanced.engine.settings import Options, build_masker
+
+    m, _ = build_masker(Options(preset="resume", ner=False), lambda: None)
+    assert m.mask(src)[0] == src
+
+
+def test_explicit_types_win_over_resume_preset():
+    from pii_mask_enhanced.engine.settings import Options, build_masker
+
+    m, _ = build_masker(Options(preset="resume", types=("POSITION",), ner=False), lambda: None)
+    assert m.mask("Должность: аналитик")[0] == "Должность: {{POSITION_1}}"
+
+
+@pytest.mark.parametrize("src", [
+    "## Желаемая должность\n\nАналитик",           # заголовок раздела резюме, без двоеточия
+    'специальность "прикладная информатика"',      # фраза
+    "должность главного бухгалтера вакантна",
+    "в лице генерального директора Иванова И.И.",  # роль представителя организации
+])
+def test_position_without_colon_untouched(src):
+    assert "{{POSITION" not in _mask(src)
+
+
 @pytest.mark.parametrize("label, value, expected", [
+    ("Должность", "ведущий инженер", "POSITION"),
+    ("Специальность", "08.03.01", "POSITION"),
     ("ЕСИА ID", "1000123456", "PERSON_ID"),
     ("Логин", "ivanov_i", "PERSON_ID"),
     ("Пол", "жен.", "PERSONAL"),

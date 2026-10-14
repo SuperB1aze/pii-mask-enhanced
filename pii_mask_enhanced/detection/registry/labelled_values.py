@@ -148,6 +148,14 @@ VALUES = (
     LabelledValue("назначение платежа", "PAYMENT", r"назначени\w*[ \t]+платеж\w*",
                   _TO_LINE_END),
 
+    # Только с двоеточием - в резюме "## Желаемая должность" это заголовок раздела, а
+    # "специальность "прикладная информатика"" - фраза. Набор resume их оставляет
+    LabelledValue("должность", "POSITION",
+                  r"(?:занимаем\w*[ \t]+)?должност\w*|професси\w*|род[ \t]+занятий",
+                  _TO_LINE_END, needs_sep=True),
+    LabelledValue("специальность", "POSITION",
+                  r"специальност\w*|направлени\w*[ \t]+подготовки", _TO_LINE_END, needs_sep=True),
+
     # орган выдачи документа; после "выдан" за номером его разбирает engine/propagation
     LabelledValue("орган выдачи", "ISSUER", _ISSUER_LABEL, _ISSUER_NAME),
     LabelledValue("код подразделения", "ISSUER", UNIT_CODE_LABEL, r"\d{3}[ \t-]?\d{3}(?!\d)",

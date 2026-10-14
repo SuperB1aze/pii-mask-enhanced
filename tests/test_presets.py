@@ -62,6 +62,11 @@ def test_preset_masks_personal_documents(tmp_path):
         assert value not in masked, f"набор пропустил {value}"
 
 
+def test_only_resume_keeps_positions():
+    assert presets.get("resume").keep_positions
+    assert not presets.get("accounting").keep_positions
+
+
 def test_presets_differ_in_strictness_to_organisations():
     assert presets.get("accounting").ner_org_needs_form
     assert not presets.get("resume").ner_org_needs_form

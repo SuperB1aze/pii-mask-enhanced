@@ -194,6 +194,7 @@ class CMD:
                     print(f"  {title}: {','.join(names)}")
             print(f"  организация только с правовой формой: "
                   f"{'да' if preset.ner_org_needs_form else 'нет'}")
+            print(f"  должность и специальность: {'оставить' if preset.keep_positions else 'скрыть'}")
         print(f"{presets.AUTO} - выбрать набор по профилю документа")
         return 0
 

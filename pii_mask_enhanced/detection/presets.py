@@ -14,6 +14,8 @@ class Preset:
     ner_org_needs_form: bool
     ner_person_needs_fio: bool = True
     inn_needs_label: bool = True
+    # должность - содержание резюме: без нее модель не ответит ни на один вопрос о кандидате
+    keep_positions: bool = False
 
 
 _PRESETS = {
@@ -30,6 +32,7 @@ _PRESETS = {
         types=TYPES,
         # то же требование на резюме работает наоборот: работодатели пишутся без ООО и без кавычек
         ner_org_needs_form=False,
+        keep_positions=True,
     ),
 }
 
