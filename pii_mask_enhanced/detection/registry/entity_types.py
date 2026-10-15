@@ -44,7 +44,9 @@ TYPES = (
     EntityType("INN", 6, labels=("ИНН",), spread=True, in_default=True, in_presets=True),
     EntityType("OGRN", 6, labels=("ОГРН", "ОГРНИП"), in_default=True, in_presets=True),
     EntityType("BIK", 5, labels=("БИК",), spread=True, in_default=True, in_presets=True),
-    EntityType("KPP", 6, labels=("КПП",), spread=True, in_default=True, in_presets=True),
+    # только по подписи: 9 цифр без нее неотличимы от загранпаспорта или номера заказа
+    EntityType("KPP", 6, labels=("КПП",), label_check=Validator.kpp_ok, spread=True,
+               in_default=True, in_presets=True),
     EntityType("OKPO", 6, labels=("ОКПО",), label_check=Validator.okpo_ok, spread=True,
                in_default=True, in_presets=True),
     EntityType("ACCOUNT", 5, in_default=True, in_presets=True),

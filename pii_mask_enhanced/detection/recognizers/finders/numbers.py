@@ -64,11 +64,6 @@ def inns(text: str) -> list[Entity]:
             for m in regs.INN_RE.finditer(text) if Validator.inn_ok(m.group())]
 
 
-def kpps(text: str) -> list[Entity]:
-    return [Entity("KPP", m.group(), m.start(), m.end(), m.group(), source=sources.BARE)
-            for m in regs.KPP_RE.finditer(text) if Validator.kpp_ok(m.group())]
-
-
 def certs(text: str) -> list[Entity]:
     out = []
     for m in regs.CERT_RE.finditer(text):

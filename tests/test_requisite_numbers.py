@@ -1,4 +1,5 @@
-"""Номера без подписи: кадастровый номер, БИК, КПП, даты. Номера в тестах выдуманные."""
+"""Номера без подписи: кадастровый номер, БИК, даты; КПП - по подписи. Номера в тестах
+выдуманные."""
 import pytest
 
 from pii_mask_enhanced.detection.recognizers.finders import numbers
@@ -56,17 +57,34 @@ def test_bik_only_as_separate_word(src):
     assert numbers.biks(src) == []
 
 
-def test_kpp_found():
-    assert _texts(numbers.kpps, "КПП 770101001") == ["770101001"]
+@pytest.mark.parametrize("src, expected", [
+    ("КПП 770101001", "КПП {{KPP_1}}"),
+    ("КПП: 770101001", "КПП: {{KPP_1}}"),
+    ("ИНН 5042037210, КПП 504201001", "ИНН {{INN_1}}, КПП {{KPP_1}}"),
+    ("ИНН/КПП 5042037210/504201001", "ИНН/КПП {{INN_1}}/{{KPP_1}}"),
+    # с 2013 года 5-6 знаки - и буквы
+    ("КПП 7701AB001", "КПП {{KPP_1}}"),
+    ("ИНН/КПП 5042037210/5042AB001", "ИНН/КПП {{INN_1}}/{{KPP_1}}"),
+])
+def test_kpp_by_label(src, expected):
+    assert _mask(src) == expected
 
 
-@pytest.mark.parametrize("src", ["7701010011", "A770101001"])
-def test_kpp_only_as_separate_word(src):
-    assert numbers.kpps(src) == []
+@pytest.mark.parametrize("src", [
+    "заказ 123456789 оформлен",     # без подписи 9 цифр - не КПП
+    "артикул 7701AB001",
+])
+def test_kpp_needs_label(src):
+    assert "{{KPP" not in _mask(src)
 
 
-@pytest.mark.parametrize("num, ok", [("770101001", True), ("77010100", False),
-                                     ("7701010011", False)])
+def test_kpp_wrong_format_is_req():
+    assert _mask("КПП 77010100") == "КПП {{REQ_1}}"
+
+
+@pytest.mark.parametrize("num, ok", [("770101001", True), ("7701AB001", True),
+                                     ("77010100", False), ("7701010011", False),
+                                     ("77AB01001", False)])
 def test_kpp_ok(num, ok):
     assert Validator.kpp_ok(num) is ok
 

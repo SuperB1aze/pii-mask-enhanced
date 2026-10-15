@@ -1,5 +1,9 @@
+import re
+
+# КПП: код инспекции, причина постановки (с 2013 - и буквы A-Z), порядковый номер.
+KPP_FORMAT = r"\d{4}[\dA-ZА-ЯЁ]{2}\d{3}"
+
 # Платежные системы: диапазон начала номера (одной разрядности) и допустимые длины.
-# 13 цифр нет намеренно: так выглядят штрихкоды EAN-13 (российские - на 46) и ОГРН.
 CARD_SCHEMES = (
     ((2200, 2204), (16, 17, 18, 19)),   # Мир
     ((4, 4), (16, 19)),                 # Visa
@@ -49,9 +53,7 @@ class Validator:
 
     @staticmethod
     def kpp_ok(num: str) -> bool:
-        if len(num) == 9:
-            return True
-        return False
+        return re.fullmatch(KPP_FORMAT, num) is not None
 
     @staticmethod
     def ogrn_ok(num: str) -> bool:

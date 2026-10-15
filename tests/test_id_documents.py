@@ -112,7 +112,7 @@ def test_lookalikes_untouched(src):
 def test_solid_number_needs_document_word_right_before():
     """9 цифр подряд бывают и у БИК, и у КПП: слово документа в той же фразе - не довод."""
     src = "загранпаспорт оформлен. БИК 044525225, КПП 770101001"
-    assert _mask(src) == src
+    assert _mask(src) == "загранпаспорт оформлен. БИК {{BIK_1}}, КПП {{KPP_1}}"
 
 
 def test_roundtrip_and_idempotent():

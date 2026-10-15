@@ -8,11 +8,13 @@ from ...registry.labelled_values import VALUES
 from .. import helpers
 from ..entity import digits, text_key
 
+_KPP_LETTERS = r"\d{4}(?-i:[A-ZА-ЯЁ]{2})\d{3}(?!\w)"
+
 # Число рядом с подписью, без контрольной суммы. Пары "ИНН/КПП" - в PAIRED_REQUISITE_RE.
 REQUISITE_RE = re.compile(
     rf"(?<![/\w])({REQUISITE_WORD}"
     r"|рег(?:истрационный)?\.?[ \t]*(?:номер|№))"
-    r"[ \t]*(?:№|:)?[ \t]*\n?[ \t]*(\d{3,15})(?![ \t]*/[ \t]*\d)",
+    rf"[ \t]*(?:№|:)?[ \t]*\n?[ \t]*({_KPP_LETTERS}|\d{{3,15}})(?![ \t]*/[ \t]*\d)",
     re.IGNORECASE,
 )
 
@@ -20,7 +22,7 @@ REQUISITE_RE = re.compile(
 PAIRED_REQUISITE_RE = re.compile(
     rf"({REQUISITE_WORD}(?:[ \t]*(?:/|и)[ \t]*{REQUISITE_WORD})+)"
     rf"[^\d\n]{{0,80}}?"
-    rf"(\d{{3,15}}(?:[ \t]*/[ \t]*\d{{0,15}})+)",
+    rf"(\d{{3,15}}(?:[ \t]*/[ \t]*(?:{_KPP_LETTERS}|\d{{0,15}}))+)",
     re.IGNORECASE,
 )
 

@@ -8,6 +8,7 @@ from xml.sax.saxutils import escape as _sax_escape
 
 from ..detection.recognizers.finders.numbers import id_doc_key
 from ..detection.recognizers.regulars import ID_DOCS, LABELLED_VALUES
+from ..detection.recognizers.validators import KPP_FORMAT
 from ..detection.registry.entity_types import REQUISITE_WORD, requisite_type
 from ..detection.registry.legal_forms import CELL_FORM
 
@@ -34,7 +35,7 @@ _WORD_SPLIT = re.compile(r"[^\w\-]+")
 # Подпись реквизита отдельной ячейкой: число рядом с ней считается реквизитом.
 REQ_LABEL_RE = re.compile(rf"^\s*({REQUISITE_WORD})\s*:?\s*$", re.IGNORECASE)
 # число у подписи реквизита; счет с группами разбирает справочник значений по подписи
-DIGITS_CELL_RE = re.compile(r"^\d{5,20}$")
+DIGITS_CELL_RE = re.compile(rf"^(?:\d{{5,20}}|{KPP_FORMAT})$")
 
 
 def unescape(text: str) -> str:
