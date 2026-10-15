@@ -103,7 +103,8 @@ VALUES = (
     # идентификатор человека в чужой системе
     LabelledValue("ЕСИА ID", "PERSON_ID",
                   r"(?:ЕСИА|госуслуг\w*)(?:[ \t]+(?:ID|идентификатор\w*))?", _digits(5, 15)),
-    LabelledValue("MDM ID", "PERSON_ID", r"MDM(?:[ \t]*(?:ID|ид\w*))?", _CODE),
+    # идентификатор объекта в ИС банка: MDM ID, OID ("1.2.643.5.1", GUID)
+    LabelledValue("ID в ИС банка", "PERSON_ID", r"MDM(?:[ \t]*(?:ID|ид\w*))?|OID", _CODE),
     LabelledValue("табельный номер", "PERSON_ID", r"таб(?:ельн\w*|\.)?[ \t]*(?:номер|№)", _CODE),
     # разделитель обязателен: "user experience", "account manager" - не логин
     LabelledValue("логин", "PERSON_ID",
