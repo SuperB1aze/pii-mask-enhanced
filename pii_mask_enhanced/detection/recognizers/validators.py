@@ -47,6 +47,11 @@ class Validator:
             return ctrl(num[:10], k11) == int(num[10]) and ctrl(num[:11], k12) == int(num[11])
         return False
 
+    @staticmethod
+    def kpp_ok(num: str) -> bool:
+        if len(num) == 9:
+            return True
+        return False
 
     @staticmethod
     def ogrn_ok(num: str) -> bool:

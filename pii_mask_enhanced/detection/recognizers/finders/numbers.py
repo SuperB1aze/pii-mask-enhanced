@@ -36,6 +36,12 @@ def snils(text: str) -> list[Entity]:
     return out
 
 
+def biks(text: str) -> list[Entity]:
+    # без подписи "ИНН" - строгий режим ядра это учитывает
+    return [Entity("BIK", m.group(), m.start(), m.end(), m.group(), source=sources.BARE)
+            for m in regs.BIK_RU_RE.finditer(text)]
+
+
 def vins(text: str) -> list[Entity]:
     out = []
     for m in regs.VIN_RE.finditer(text):
@@ -58,6 +64,11 @@ def inns(text: str) -> list[Entity]:
             for m in regs.INN_RE.finditer(text) if Validator.inn_ok(m.group())]
 
 
+def kpps(text: str) -> list[Entity]:
+    return [Entity("KPP", m.group(), m.start(), m.end(), m.group(), source=sources.BARE)
+            for m in regs.KPP_RE.finditer(text) if Validator.kpp_ok(m.group())]
+
+
 def certs(text: str) -> list[Entity]:
     out = []
     for m in regs.CERT_RE.finditer(text):
@@ -77,6 +88,16 @@ def uids(text: str) -> list[Entity]:
              if len(re.findall(r"[0-9a-f]", m.group(), re.IGNORECASE)) >= helpers.UID_MIN_HEX]
     return [Entity("UID", m.group(), m.start(), m.end(), m.group().lower())
             for m in outermost(found)]
+
+
+def kadastr_numbers(text: str) -> list[Entity]:
+    return [Entity("KADASTR_NUMBER", m.group(), m.start(), m.end(), m.group(), source=sources.BARE)
+            for m in regs.KADASTR_NUMBER_RE.finditer(text)]
+
+
+def dates(text: str) -> list[Entity]:
+    return [Entity("DATE", m.group(), m.start(), m.end(), m.group(), source=sources.BARE)
+            for m in regs.DATE_RE.finditer(text)]
 
 
 def id_doc_key(value: str) -> str:

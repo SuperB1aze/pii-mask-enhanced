@@ -43,11 +43,12 @@ TYPES = (
     EntityType("VEHICLE", 5, spread=True, in_default=True, in_presets=True),
     EntityType("INN", 6, labels=("ИНН",), spread=True, in_default=True, in_presets=True),
     EntityType("OGRN", 6, labels=("ОГРН", "ОГРНИП"), in_default=True, in_presets=True),
-    EntityType("KPP", 6, labels=("КПП",), spread=True, in_presets=True),
-    EntityType("BIK", 6, labels=("БИК",), in_presets=True),
+    EntityType("BIK", 5, labels=("БИК",), spread=True, in_default=True, in_presets=True),
+    EntityType("KPP", 6, labels=("КПП",), spread=True, in_default=True, in_presets=True),
     EntityType("OKPO", 6, labels=("ОКПО",), label_check=Validator.okpo_ok, spread=True,
                in_default=True, in_presets=True),
     EntityType("ACCOUNT", 5, in_default=True, in_presets=True),
+    EntityType("KADASTR_NUMBER", 6, spread=True, in_default=True, in_presets=True),
     EntityType("INVESTOR", 6, spread=True, in_default=True, in_presets=True),
     # Значения по подписи (registry/labelled_values)
     # идентификатор человека в чужой системе: ЕСИА, MDM, логин, полис, ЭЛН, таб. номер
