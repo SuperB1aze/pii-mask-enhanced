@@ -38,6 +38,7 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
         *requisites.paired(text),
         *requisites.labelled(text),
         *requisites.labelled_values(text),
+        *requisites.incomes(text),
         *requisites.moex_codes(text),
         *addresses.addresses(text),
         *addresses.coordinates(text),

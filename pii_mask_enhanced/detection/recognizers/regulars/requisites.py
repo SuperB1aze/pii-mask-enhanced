@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ...registry.entity_types import REQUISITE_WORD
-from ...registry.labelled_values import VALUES
+from ...registry.labelled_values import INCOME_AMOUNT, INCOME_LABEL, VALUES
 from .. import helpers
 from ..entity import digits, text_key
 
@@ -98,6 +98,15 @@ def _labelled_value(v) -> LabelledValueRe:
 
 LABELLED_VALUES = tuple(_labelled_value(v) for v in VALUES)
 
+# Доход со словами между подписью и суммой: "оклад в размере 120 000 руб.",
+# "алименты за 2024 год составили 240 000". Между ними - без цифр, кроме даты и года,
+# и в пределах строки и колонки
+INCOME_RE = re.compile(
+    rf"(?<![\w/])(?:{INCOME_LABEL})(?![\w/])"
+    rf"((?:[^\d\n%|]|{helpers.DATE}|(?:19|20)\d{{2}}[ \t]*г(?:од\w*|\.)){{1,60}}?)"
+    rf"((?-i:{INCOME_AMOUNT}))",
+    re.IGNORECASE,
+)
 
 def value_group(m: re.Match) -> int:
     """Группа со значением: у подписи с разделителем два варианта записи, у остальных один."""

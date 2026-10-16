@@ -63,6 +63,8 @@ TYPES = (
     EntityType("RATING", 7, in_default=True, in_presets=True),
     # должность и специальность по подписи; набор resume их оставляет (presets.keep_positions)
     EntityType("POSITION", 9, in_default=True, in_presets=True),
+    # доход и удержания человека: оклад, зарплата, пенсия, алименты, "удержано"
+    EntityType("INCOME", 6, in_default=True, in_presets=True),
     # назначение платежа закрывается целиком
     EntityType("PAYMENT", 3, in_default=True, in_presets=True),
     EntityType("DOCREF", 6, in_presets=True),

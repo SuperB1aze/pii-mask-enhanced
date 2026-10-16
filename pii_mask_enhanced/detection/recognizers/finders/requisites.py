@@ -83,6 +83,13 @@ def labelled_values(text: str) -> list[Entity]:
     return out
 
 
+def incomes(text: str) -> list[Entity]:
+    """Сумма дохода или удержания через несколько слов после подписи."""
+    return [Entity("INCOME", m.group(2), m.start(2), m.end(2), text_key(m.group(2)),
+                   source=sources.REQUISITE)
+            for m in regs.INCOME_RE.finditer(text)]
+
+
 def moex_codes(text: str) -> list[Entity]:
     """Торговый код Мосбиржи "MC" + 10 цифр - единственный код инвестора без подписи."""
     return [Entity("INVESTOR", m.group(), m.start(), m.end(), text_key(m.group()))
