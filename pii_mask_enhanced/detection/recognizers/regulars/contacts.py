@@ -21,9 +21,24 @@ PHONE_RE = re.compile(
     re.IGNORECASE,
 )
 
+PHONE_LABEL = r"(?<!\w)(?:телефон\w*|тел|т|факс|моб|сот)\.?[ \t]*(?:[:№][ \t]*)?"
 PHONE_LOCAL_RE = re.compile(
-    r"(?<!\w)(?:телефон\w*|тел|т|факс|моб|сот)\.?[ \t]*(?:[:№][ \t]*)?"
-    rf"(\d{{1,3}}-\d{{2}}-\d{{2}}{PHONE_EXT}?)(?![\d-])",
+    rf"{PHONE_LABEL}(\d{{1,3}}-\d{{2}}-\d{{2}}{PHONE_EXT}?)(?![\d-])",
+    re.IGNORECASE,
+)
+
+# Код в скобках - телефон и без подписи: "(495) 123-45-67"
+PHONE_NATIONAL_RE = re.compile(
+    r"(?<![\d+])(?<![\d+][ \-])(?:"
+    rf"\([3489]\d{{2}}\)[ \-]?{_digits_run(7)}"
+    rf"|\([3489]\d{{3}}\)[ \-]?{_digits_run(6)}"
+    rf"|\([3489]\d{{4}}\)[ \-]?{_digits_run(5)}"
+    rf"){PHONE_EXT}?(?!\d)",
+    re.IGNORECASE,
+)
+# только после "тел": "тел. 495 123-45-67"
+PHONE_NATIONAL_LABELLED_RE = re.compile(
+    rf"{PHONE_LABEL}([3489]\d{{2}}[ \-]?{_digits_run(7)}{PHONE_EXT}?)(?![\d-])",
     re.IGNORECASE,
 )
 # международный префикс "00" вместо "+": "00 44 20 7946 0958"

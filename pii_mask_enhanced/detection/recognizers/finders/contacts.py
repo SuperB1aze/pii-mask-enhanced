@@ -107,4 +107,11 @@ def phones(text: str) -> list[Entity]:
     for m in regs.PHONE_LOCAL_RE.finditer(text):
         number, ext = _split_ext(m.group(1))
         out.append(Entity("PHONE", m.group(1), m.start(1), m.end(1), _phone_key(number, ext)))
+    for m in regs.PHONE_NATIONAL_RE.finditer(text):
+        number, ext = _split_ext(m.group())
+        out.append(Entity("PHONE", m.group(), m.start(), m.end(), _phone_key("7" + number, ext)))
+    for m in regs.PHONE_NATIONAL_LABELLED_RE.finditer(text):
+        number, ext = _split_ext(m.group(1))
+        out.append(Entity("PHONE", m.group(1), m.start(1), m.end(1),
+                          _phone_key("7" + number, ext)))
     return out + _international(text)
