@@ -109,8 +109,16 @@ _INNER_RATING_LABEL = (
 )
 _INNER_RATING = r"(?:\d{1,2}|[A-Z]{1,3}\d{0,2}[+-]?)(?![\w+-])"
 
+# пол рядом с ФИО: "Иванова А.А., женщина", "Иванов И.И. (муж.)", "мужского пола".
+_SEX_NEAR = (r"мужчин\w*|женщин\w*|(?:муж|жен)\.|(?:мужск|женск)\w*[ \t]+пол(?:а|у|ом|е)?")
+
 # наборы, которые ищутся рядом с найденным человеком (engine/propagation)
-PERSON_TERMS = (_RANK, _DEGREE, _MARITAL, _AGE, _CITIZEN_STATUS)
+PERSON_TERMS = (_RANK, _DEGREE, _MARITAL, _AGE, _CITIZEN_STATUS, _SEX_NEAR)
+
+# Подпись пола: "пол клиента", "половая принадлежность", "gender", "sex"
+_SEX_LABEL = (r"пол(?:[ \t]+(?:клиент|заемщик|заёмщик|ребенк|ребёнк|пациент|сотрудник|работник"
+              r"|застрахованн|заявител|получател|владельц)\w*)?"
+              r"|полов\w*[ \t]+принадлежност\w*|gender|sex")
 
 
 @dataclass(frozen=True)
@@ -173,7 +181,7 @@ VALUES = (
 
     # сведения о человеке
     # "пол" - и пол комнаты, поэтому двоеточие обязательно
-    LabelledValue("пол", "PERSONAL", r"пол",
+    LabelledValue("пол", "PERSONAL", _SEX_LABEL,
                   r"(?:[Мм]уж\w*|[Жж]ен\w*|[МмЖж]|[Mm]ale|[Ff]emale|[MF])\.?(?!\w)", needs_sep=True),
     # после двоеточия - любое значение, без него - только название
     LabelledValue("гражданство", "PERSONAL", r"гражданств\w*|citizenship|nationality", _WORDS,
