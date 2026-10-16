@@ -58,6 +58,26 @@ def vins(text: str) -> list[Entity]:
     return out
 
 
+_LATIN_TO_CYR = str.maketrans("ABEKMHOPCTYX", "АВЕКМНОРСТУХ")
+
+
+def plates(text: str) -> list[Entity]:
+    """Госномер: легковой формат - всегда, прицеп, мотоцикл и такси - только у подписи."""
+    out = []
+    for rx in (regs.PLATE_RE, regs.PLATE_OTHER_RE):
+        for m in rx.finditer(text):
+            window = text[max(0, m.start() - 40):m.start()]
+            labelled = regs.PLATE_LABEL_RE.search(window)
+            # без подписи: буква слитно с цифрами ("В 100 км" - не номер) и рядом не товар
+            if labelled or (rx is regs.PLATE_RE and not m.group()[1].isspace()
+                            and not regs.VIN_GOODS_CTX_RE.search(window)):
+                # "A123BC77 RUS" латиницей и "А 123 ВС 77" - один номер, одна метка
+                key = re.sub(r"RUS|[\W_]", "", m.group().upper()).translate(_LATIN_TO_CYR)
+                out.append(Entity("VEHICLE", m.group(), m.start(), m.end(), key,
+                                  source=sources.REQUISITE if labelled else ""))
+    return out
+
+
 def inns(text: str) -> list[Entity]:
     # без подписи "ИНН" - строгий режим ядра это учитывает
     return [Entity("INN", m.group(), m.start(), m.end(), m.group(), source=sources.BARE)
@@ -96,8 +116,8 @@ def dates(text: str) -> list[Entity]:
 
 
 def id_doc_key(value: str) -> str:
-    # "АБ № 1234567" и "АБ 1234567" - один документ, одна метка
-    return re.sub(r"[\W_]", "", value).upper()
+    # "АБ № 1234567", "АБ 1234567" и "АБ номер 1234567" - один документ, одна метка
+    return re.sub(r"[Нн]омер|[\W_]", "", value).upper()
 
 
 def id_documents(text: str) -> list[Entity]:
