@@ -59,6 +59,8 @@ TYPES = (
     EntityType("SECRET", 5, spread=True, in_default=True, in_presets=True),
     # пол, гражданство, семейное положение, возраст, кредитный рейтинг
     EntityType("PERSONAL", 9, in_default=True, in_presets=True),
+    # кредитный рейтинг юрлица: шкалы агентств и внутренний рейтинг банка;
+    EntityType("RATING", 7, in_default=True, in_presets=True),
     # должность и специальность по подписи; набор resume их оставляет (presets.keep_positions)
     EntityType("POSITION", 9, in_default=True, in_presets=True),
     # назначение платежа закрывается целиком
