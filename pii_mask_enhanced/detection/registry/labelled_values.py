@@ -181,10 +181,16 @@ VALUES = (
     LabelledValue("счет депо", "PERSON_ID", r"(?:раздел\w*[ \t]+)?сч[её]т\w*[ \t]+депо", _CODE),
 
     # секреты: по ним входят в систему или подтверждают личность
+    # "CVV-код", "код безопасности карты", "card verification value", "security code"
     LabelledValue("CVV", "SECRET",
-                  r"CVV2?|CVC2?|CAV2|CID|код\w*[ \t]+(?:безопасности|на[ \t]+оборот\w*)",
+                  r"(?:CVV2?|CVC2?|CAV2|CVP2|CVN2?|CID)(?:[ -]?код\w*)?"
+                  r"|код\w*[ \t]+(?:безопасности|на[ \t]+оборот\w*)(?:[ \t]+карт\w*)?"
+                  r"|card[ \t]+(?:verification|security)[ \t]+(?:value|code)|security[ \t]+code",
                   r"\d{3,4}(?!\d)"),
-    LabelledValue("PIN", "SECRET", r"(?:PIN|ПИН)(?:[ -]?код)?", r"\d{4,6}(?!\d)"),
+    # "ПИН-код карты", "пин-код от карты", "PIN code"
+    LabelledValue("PIN", "SECRET",
+                  r"(?:PIN|ПИН)(?:[ -]?(?:код\w*|code))?(?:[ \t]+(?:от[ \t]+)?карт\w*)?",
+                  r"\d{4,6}(?!\d)"),
     # без кавычек: в JSON '"password": "Qwerty123"' закрывающая кавычка - не часть пароля
     LabelledValue("пароль", "SECRET", r"пароль|password|passwd|pwd", r"[^\s,;\"'`]{3,64}",
                   needs_sep=True),

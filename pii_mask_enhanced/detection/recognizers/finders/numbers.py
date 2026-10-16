@@ -23,6 +23,17 @@ def cards(text: str) -> list[Entity]:
     return out
 
 
+def card_tracks(text: str) -> list[Entity]:
+    out = []
+    for rx in (regs.CARD_TRACK1_RE, regs.CARD_TRACK2_RE):
+        for m in rx.finditer(text):
+            pan = m.group(1) or m.group(2)
+            if m.group(1) is None and not Validator.card_ok(pan):
+                continue
+            out.append(Entity("CARD", m.group(), m.start(), m.end(), pan))
+    return out
+
+
 def snils(text: str) -> list[Entity]:
     out = []
     for m in regs.SNILS_RE.finditer(text):

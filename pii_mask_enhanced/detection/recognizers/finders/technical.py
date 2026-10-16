@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import ipaddress
+import math
+from collections import Counter
 
 from ...registry import sources
 from .. import regulars as regs
@@ -69,6 +71,51 @@ def credentials(text: str) -> list[Entity]:
                               source=sources.REQUISITE))
     out += [Entity("PERSON_ID", m.group(), m.start(), m.end(), text_key(m.group()))
             for m in regs.DOMAIN_LOGIN_RE.finditer(text)]
+    return out
+
+
+def _entropy(value: str) -> float:
+    """Бит на символ (Шеннон): у ключей и токенов от ~3.5, у слов и "default_value" меньше."""
+    counts = Counter(value)
+    return -sum(n / len(value) * math.log2(n / len(value)) for n in counts.values())
+
+
+# порог энтропии и обязательная смесь классов символов - как у gitleaks
+_SECRET_ENTROPY = 3.5
+
+
+def _looks_random(value: str) -> bool:
+    classes = sum(any(f(c) for c in value) for f in (str.isdigit, str.islower, str.isupper))
+    return classes >= 2 and _entropy(value) >= _SECRET_ENTROPY
+
+
+def secrets(text: str) -> list[Entity]:
+    """Хэши паролей, ключи шифрования, токены сервисов."""
+    out = [Entity("SECRET", m.group(), m.start(), m.end(), m.group())
+           for rx in (regs.PASSWORD_HASH_RE, regs.API_TOKEN_RE) for m in rx.finditer(text)]
+    out += [Entity("SECRET", m.group(1), m.start(1), m.end(1), m.group(1).lower(),
+                   source=sources.REQUISITE)
+            for m in regs.HEX_HASH_RE.finditer(text)]
+    for m in regs.NTLM_DUMP_RE.finditer(text):
+        out.append(Entity("PERSON_ID", m.group(1), m.start(1), m.end(1), text_key(m.group(1))))
+        out += [Entity("SECRET", m.group(g), m.start(g), m.end(g), m.group(g).lower())
+                for g in (2, 3)]
+    for m in regs.PEM_RE.finditer(text):
+        # тело без переводов строки по краям: заголовки остаются на своих строках
+        body = m.group(2)
+        lead = len(body) - len(body.lstrip())
+        value = body.strip()
+        if value:
+            start = m.start(2) + lead
+            out.append(Entity("SECRET", value, start, start + len(value), value))
+    for m in regs.SSH_KEY_RE.finditer(text):
+        out.append(Entity("SECRET", m.group(1), m.start(1), m.end(1), m.group(1)))
+        if m.group(2):
+            out.append(Entity("PERSON_ID", m.group(2), m.start(2), m.end(2),
+                              text_key(m.group(2))))
+    out += [Entity("SECRET", m.group(1), m.start(1), m.end(1), m.group(1),
+                   source=sources.REQUISITE)
+            for m in regs.SECRET_KEY_RE.finditer(text) if _looks_random(m.group(1))]
     return out
 
 
