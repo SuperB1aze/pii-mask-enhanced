@@ -22,7 +22,6 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
         *technical.ips(text),
         *technical.devices(text),
         *technical.sessions(text),
-        # раньше справочника значений: в "логин/пароль: a / b" подпись "пароль" не забирает логин
         *technical.credentials(text),
         *numbers.cards(text),
         *numbers.vins(text),
@@ -39,6 +38,7 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
         *requisites.labelled_values(text),
         *requisites.moex_codes(text),
         *addresses.addresses(text),
+        *addresses.coordinates(text),
         *requisites.doc_numbers(text),
         *orgs.orgs(text, org_names),
         *numbers.ogrns(text),
