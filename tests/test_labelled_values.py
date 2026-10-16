@@ -26,6 +26,15 @@ def _mask(text: str, preset: str | None = None) -> str:
     ("OID 1.2.643.5.1", "OID {{PERSON_ID_1}}"),
     ("OID: 3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90", "OID: {{PERSON_ID_1}}"),
     ("таб. № 00123", "таб. № {{PERSON_ID_1}}"),
+    ("таб.№00123", "таб.№{{PERSON_ID_1}}"),
+    ("таб № 00123", "таб № {{PERSON_ID_1}}"),
+    ("Таб. N 00123", "Таб. N {{PERSON_ID_1}}"),
+    ("табельного номера 00123", "табельного номера {{PERSON_ID_1}}"),
+    ("табельный номер работника: 00123", "табельный номер работника: {{PERSON_ID_1}}"),
+    ("табельный номер - 00123", "табельный номер - {{PERSON_ID_1}}"),
+    ("личный номер Ж-123456", "личный номер {{PERSON_ID_1}}"),
+    ("ID сотрудника: 00123", "ID сотрудника: {{PERSON_ID_1}}"),
+    ("employee ID: 00123", "employee ID: {{PERSON_ID_1}}"),
     ("логин: ivanov_i", "логин: {{PERSON_ID_1}}"),
     ("обращение № 2024-0012345 от клиента", "обращение № {{PERSON_ID_1}} от клиента"),
     ("карта лояльности 1234567890", "карта лояльности {{PERSON_ID_1}}"),
@@ -178,6 +187,9 @@ def test_labelled_value_masked_everywhere():
     "поле OID обязательно",
     "PIN-код выдается в отделении",
     "ПИН-кода нет",
+    "табельный номер присваивается при приеме",
+    "см. таб 12",                               # голое "таб" без "№" - таблица
+    "табельный номер ABC",                      # в номере нет цифры
     "CVV 12",                                   # 2 цифры - не CVV
     "PIN 1234567",                              # 7 цифр - не PIN
     "в возрасте до 18 лет",
@@ -257,3 +269,12 @@ def test_roundtrip_and_idempotent():
     masked, mapping = m.mask(src)
     assert m.unmask(masked, mapping) == src
     assert m.mask(masked, mapping)[0] == masked
+
+
+@pytest.mark.parametrize("src, expected", [
+    ("Иванов И.И., таб. 00123", "{{PERSON_1}}, таб. {{PERSON_ID_1}}"),
+    ("Иванов И.И. (таб. 00123)", "{{PERSON_1}} (таб. {{PERSON_ID_1}})"),
+])
+def test_tab_number_after_name(src, expected):
+    """"таб." без "номер" - так табельный пишут рядом с ФИО в приказах и ведомостях."""
+    assert _mask(src) == expected
