@@ -57,6 +57,12 @@ def clearance(text: str) -> list[Entity]:
             if not re.match(r"[ \t]*:", text[m.end():])]
 
 
+def shares(text: str) -> list[Entity]:
+    # доля в капитале или в праве собственности - процент или дробь после подписи
+    return [Entity("PERSONAL", m.group(1), m.start(1), m.end(1), " ".join(m.group(1).split()))
+            for rx in (regs.SHARE_RE, regs.SHARE_OWN_RE) for m in rx.finditer(text)]
+
+
 def persons(text: str) -> list[Entity]:
     out: list[Entity] = []
     named: list[Span] = []
