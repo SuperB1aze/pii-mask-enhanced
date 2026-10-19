@@ -1,7 +1,7 @@
 """Люди: ФИО капсом и с инициалами, дата и год рождения."""
 import re
 
-from ...registry.labelled_values import PERSON_TERMS
+from ...registry.labelled_patterns import PERSON_TERMS
 from .. import helpers
 
 CAPS_FIO_RE = re.compile(

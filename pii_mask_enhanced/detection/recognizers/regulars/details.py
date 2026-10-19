@@ -4,7 +4,7 @@
 """
 import re
 
-from ...registry.labelled_values import UNIT_CODE_LABEL
+from ...registry.labelled_patterns import UNIT_CODE_LABEL
 from .. import helpers
 
 # дата выдачи с необязательным "г.": "12 марта 2015 г."

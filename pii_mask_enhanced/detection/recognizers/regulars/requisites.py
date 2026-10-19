@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ...registry.entity_types import REQUISITE_WORD
-from ...registry.labelled_values import (BALANCE_AMOUNT, BALANCE_LABEL, INCOME_AMOUNT,
-                                         INCOME_LABEL, VALUES)
+from ...registry.labelled_patterns import (BALANCE_AMOUNT, BALANCE_LABEL, INCOME_AMOUNT,
+                                           INCOME_LABEL)
+from ...registry.labelled_values import VALUES
 from .. import helpers
 from ..entity import digits, text_key
 
