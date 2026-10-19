@@ -68,7 +68,8 @@ COORD_DEG_RE = re.compile(
     r"(?:\d{1,2}(?:[.,]\d+)?['′][ \t]?(?:\d{1,2}(?:[.,]\d+)?(?:[\"″]|'')[ \t]?)?)?"
     r"((?:[NSEW]|[сю]\.?[ \t]?ш\.|[вз]\.?[ \t]?д\.)(?![\w]))?")
 COORD_LABEL_RE = re.compile(
-    r"координат\w*|GPS|геолокаци\w*|геопозици\w*|местоположени\w*|широт\w*|долгот\w*",
+    r"координат\w*|GPS|геолокаци\w*|геопозици\w*|местоположени\w*|широт\w*|долгот\w*"
+    r"|\bgeo\w*|\blat(?:itude)?\b|\blo?ng?(?:itude)?\b|location",
     re.IGNORECASE)
 
 RESIDENCE_RE = re.compile(

@@ -162,7 +162,7 @@ def test_presets_command_lists_the_sets(tmp_path):
     assert "resume" in proc.stdout and "accounting" in proc.stdout
     assert "PERSON" in proc.stdout
     # технические типы показаны отдельной строкой
-    assert "технические: IP,DEVICE,SESSION,USER_AGENT" in proc.stdout
+    assert "технические: IP,DEVICE,SESSION,BEHAVIOR,USER_AGENT" in proc.stdout
 
 
 def test_unknown_type_fails_loudly(tmp_path):

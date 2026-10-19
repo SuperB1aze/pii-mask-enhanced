@@ -27,10 +27,25 @@ def ips(text: str) -> list[Entity]:
     return out
 
 
+def _by_key(etype: str, rx, text: str, key=text_key) -> list[Entity]:
+    """Значение из первой непустой группы: ключ лога, поле JSON, параметр запроса."""
+    out = []
+    for m in rx.finditer(text):
+        g = next(i for i in range(1, (m.lastindex or 0) + 1) if m.group(i))
+        value = m.group(g).rstrip(" \t.")
+        out.append(Entity(etype, value, m.start(g), m.start(g) + len(value), key(value),
+                          source=sources.REQUISITE))
+    return out
+
+
 def devices(text: str) -> list[Entity]:
     out = [Entity("DEVICE", m.group(1), m.start(1), m.end(1), digits(m.group(1)),
                   source=sources.REQUISITE)
            for m in regs.IMEI_RE.finditer(text)]
+    # SIM, ОС, идентификатор и модель устройства по ключу
+    for rx in (regs.SIM_RE, regs.OS_RE, regs.DEVICE_ID_RE, regs.DEVICE_MODEL_RE,
+               regs.DEVICE_MODEL_RU_RE):
+        out += _by_key("DEVICE", rx, text)
     for m in regs.MAC_RE.finditer(text):
         mac = m.group()
         # "12-34-56-78-90-12" без единой буквы - скорее номер; с двоеточиями - MAC
@@ -58,6 +73,14 @@ def sessions(text: str) -> list[Entity]:
             out.append(Entity("SESSION", value, start, start + len(value), value,
                               source=sources.REQUISITE))
     return out
+
+
+def behavior(text: str) -> list[Entity]:
+    """Поведение на сайте: просмотры, время, поисковый запрос; referrer - адрес целиком."""
+    out = []
+    for rx in (regs.PAGEVIEWS_RE, regs.DURATION_RE, regs.SEARCH_QUERY_RE):
+        out += _by_key("BEHAVIOR", rx, text)
+    return out + _by_key("URL", regs.REFERRER_RE, text)
 
 
 def credentials(text: str) -> list[Entity]:
@@ -121,7 +144,8 @@ def secrets(text: str) -> list[Entity]:
 
 def user_agents(text: str) -> list[Entity]:
     found = [(m.start(1), m.group(1)) for m in regs.USER_AGENT_HEADER_RE.finditer(text)]
-    found += [(m.start(), m.group()) for m in regs.USER_AGENT_RE.finditer(text)]
+    found += [(m.start(), m.group())
+              for rx in (regs.USER_AGENT_RE, regs.APP_AGENT_RE) for m in rx.finditer(text)]
     out = []
     for start, value in found:
         value = value.rstrip(" \t,;")

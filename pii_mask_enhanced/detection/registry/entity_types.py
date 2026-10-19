@@ -84,6 +84,8 @@ TYPES = (
     EntityType("IP", 9, in_default=True, in_presets=True, group="technical"),
     EntityType("DEVICE", 5, in_default=True, in_presets=True, group="technical"),
     EntityType("SESSION", 8, in_default=True, in_presets=True, group="technical"),
+    # просмотры, время на сайте, поисковый запрос
+    EntityType("BEHAVIOR", 9, in_default=True, in_presets=True, group="technical"),
     EntityType("USER_AGENT", 4, in_default=True, in_presets=True, group="technical"),
 )
 

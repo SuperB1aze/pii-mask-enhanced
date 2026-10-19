@@ -10,17 +10,73 @@ MAC_RE = re.compile(
     r"(?<![\w:.-])[0-9A-Fa-f]{2}([:-])(?:[0-9A-Fa-f]{2}\1){4}[0-9A-Fa-f]{2}(?![\w:.-])"
     r"|(?<![\w.])[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}(?![\w.])"
 )
+# номер слота SIM - вплотную ("IMEI2") или перед разделителем ("IMEI 1:")
 IMEI_RE = re.compile(
-    r"(?<!\w)(?:IMEI(?:SV)?|ИМЕЙ)[ \t]*\d?[ \t]*[:№=]?[ \t]*(\d(?:[ /-]?\d){13,15})(?!\d)",
+    r"(?<!\w)(?:IMEI(?:SV)?|ИМЕЙ)(?:[12](?!\d)|[ \t]+[12](?=[ \t]*[:№=]))?"
+    r"[ \t]*[:№=]?[ \t]*(\d(?:[ /-]?\d){13,15})(?!\d)",
     re.IGNORECASE,
 )
+# SIM-карта: IMSI - 15 цифр, ICCID - 19-20 цифр с "89"; только у подписи
+SIM_RE = re.compile(
+    r"(?<!\w)(?:IMSI[ \t]*[:=№]?[ \t]*(\d{15})|ICCID[ \t]*[:=№]?[ \t]*(89\d{17,18}))(?!\d)",
+    re.IGNORECASE)
+
+
+def _key_value(keys: str, value: str, sep: str = r"[=:]") -> re.Pattern:
+    """Значение по ключу в логе, JSON, query string: 'os: Android 13', '"os": "Android 13"',
+    'device_id=a1b2'. Ключ - отдельным словом, кавычки вокруг ключа и значения допускаются."""
+    return re.compile(
+        rf"(?<![\w-])[\"']?(?:{keys})[\"']?[ \t]*{sep}[ \t]*[\"']?({value})", re.IGNORECASE)
+
+
+# конец значения поля: кавычка, запятая, ";", "&", "}", граница колонки, строка
+_FIELD_END = r"(?=[ \t]*(?:[\"',;&}|\n]|$))"
+# ОС: "os: Android 13", "platform: Windows 10", "os_version=13", "ОС: iOS 17.2"
+OS_RE = _key_value(
+    r"os|os[_-]?(?:name|version|ver)|platform|operating[_-]?system|(?-i:ОС)"
+    r"|операционн\w*[ \t]+систем\w*",
+    rf"[A-Za-zА-Яа-я0-9][\w.]*(?:[ \t]+[\w.]+){{0,3}}?{_FIELD_END}")
+# Идентификатор устройства и приложения
+DEVICE_ID_RE = _key_value(
+    r"device[_-]?id|android[_-]?id|idfv|idfa|gaid|adid|advertising[_-]?id|hwid"
+    r"|hardware[_-]?id|udid|install(?:ation)?[_-]?id|(?:push|fcm|apns)[_-]?token"
+    r"|serial(?:[_-]?(?:number|no))?|s/n|(?-i:SN)|серийн\w*[ \t]+номер\w*",
+    r"(?=[\w.:-]*\d)[\w.:-]{6,}")
+# Модель: "model: SM-G991B", "модель телефона iPhone 14 Pro" - латинские слова, есть цифра
+_MODEL = r"(?=[^\n\"',;&}|]*\d)[A-Za-z0-9][\w.+-]*(?:[ \t]+[A-Za-z0-9][\w.+-]*){0,3}"
+DEVICE_MODEL_RE = _key_value(r"device[_-]?model|model|модел\w*", _MODEL)
+DEVICE_MODEL_RU_RE = re.compile(
+    rf"(?<!\w)модел\w*[ \t]+(?:устройств|телефон|смартфон|планшет|девайс)\w*[ \t]*:?[ \t]*({_MODEL})"
+    # без уточнения - только код модели из букв и цифр: "модель SM-G991B"
+    r"|(?<!\w)модел\w*[ \t]+((?=[\w-]*[A-Za-z])(?=[\w-]*\d)[A-Za-z0-9][\w-]{2,})(?![\w-])",
+    re.IGNORECASE)
+
+# Поведение на сайте: просмотры и время. Число по ключу
+PAGEVIEWS_RE = _key_value(
+    r"page[_-]?views?|pageviews|просмотр\w*[ \t]+страниц|просмотрено[ \t]+страниц"
+    r"|глубина[ \t]+просмотра",
+    r"\d+(?:[.,]\d+)?")
+DURATION_RE = _key_value(
+    r"(?:session|visit)[_-]?duration|time[_-]?on[_-]?(?:site|page)|время[ \t]+на[ \t]+сайте"
+    r"|время[ \t]+(?:сеанса|визита|сессии)|длительност\w*[ \t]+(?:визита|сеанса|сессии)",
+    r"\d{1,2}:\d{2}(?::\d{2})?|\d+(?:[.,]\d+)?(?:[ \t]*(?:сек\w*|с\.?|мин\w*|ч\.?|час\w*"
+    r"|ms|sec|s|min|m|h)(?![\w]))?")
+# Поисковый запрос в параметрах: "?text=купить+квартиру", "q=ипотека"
+SEARCH_QUERY_RE = re.compile(
+    r"(?:(?<=[?&])|(?<![\w;-]))(?:q|text|query|search|search_query|wd|keywords?)="
+    r"((?=[^&\s#\"']*[^\W\d_])[^&\s#\"']+)", re.IGNORECASE)
+# referrer по ключу - целиком: URL-кодированный "https%3A%2F%2Fsite.ru" адресом не узнается
+REFERRER_RE = _key_value(r"referr?er|http[_-]?referr?er", r"[^&\s\"']{4,}")
 
 # заголовок.нагрузка.подпись в base64url; без подписи ("alg": "none") подпись пустая
 JWT_RE = re.compile(r"(?<![\w-])eyJ[\w-]{5,}\.eyJ[\w-]{5,}\.[\w-]*(?![\w-])")
 # значение по ключу; в значении есть цифра: "session: утро" - не идентификатор
 SESSION_RE = re.compile(
     r"(?<![\w-])(?:PHPSESSID|JSESSIONID|ASP\.NET_SessionId|session[_-]?id|session|sid|ssid"
-    r"|(?:access|refresh|id|auth|csrf)[_-]?token|token|api[_-]?key|yandexuid|_ym_uid|_ga)"
+    r"|(?:access|refresh|id|auth|csrf)[_-]?token|token|api[_-]?key|yandexuid|_ym_uid|_ga"
+    # пользователь и посетитель в логах и аналитике
+    r"|user[_-]?id|uid|client[_-]?id|visitor[_-]?id|customer[_-]?id|ym[_-]?uid"
+    r"|(?:device[_-]?|browser[_-]?)?fingerprint)"
     r"[\"']?[ \t]*[=:][ \t]*[\"']?((?=[\w.~+/%-]*\d)[\w.~+/%-]{6,}=*)",
     re.IGNORECASE,
 )
@@ -84,3 +140,11 @@ SECRET_KEY_RE = re.compile(
 # строка браузера: заголовок или узнаваемое начало "Mozilla/5.0 (...)"
 USER_AGENT_HEADER_RE = re.compile(r"User-Agent[ \t]*[:=][ \t]*[\"']?([^\r\n\"']+)", re.IGNORECASE)
 USER_AGENT_RE = re.compile(r"(?<![\w/])Mozilla/\d\.\d[ \t]+\([^)\n]*\)[^\r\n\"']*")
+# Строка мобильного клиента: "Dalvik/2.1.0 (Linux; U; Android 13; SM-G991B)",
+# "MyBank/5.2 (iPhone; iOS 17.2)", "App/1 CFNetwork/1410 Darwin/22.6.0" - в скобках ОС и модель.
+# "okhttp/4.9.3", "curl/8.4.0" - библиотека, а не устройство: без скобок с ОС не берем
+APP_AGENT_RE = re.compile(
+    r"(?<![\w/])(?:[A-Za-z][\w.-]{1,30}/[\w.]+[ \t]+)*"
+    r"(?:[A-Za-z][\w.-]{1,30}/[\w.]+[ \t]+\((?=[^)\n]*(?:Android|iPhone|iPad|iOS|Windows NT|Linux"
+    r"|Mac OS|Darwin))[^)\n]*\)|CFNetwork/[\w.]+[ \t]+Darwin/[\w.]+)"
+    r"(?:[ \t]+[A-Za-z][\w.-]{1,30}/[\w.]+)*")

@@ -24,5 +24,10 @@ ORG_GENERIC_QUOTED_RE = re.compile(
     rf"(?<![\w-]){_ORG_TYPE_GENERIC}[ \t]+([«\"][^»\"\n]{{2,80}}[»\"])", re.IGNORECASE
 )
 
+# Поле JSON: '"os": "Android 13"' - значение,'"name":' - ключ
+JSON_KEY_BEFORE_RE = re.compile(r"\"[\w.-]{1,40}\"[ \t]*:[ \t]*$")
+JSON_KEY_AFTER_RE = re.compile(r"[ \t]*:")
+LATIN_VALUE_RE = re.compile(r"[\x00-\x7f]+")
+
 ORG_QUOTED_NAME_RE = re.compile(
     r"[«\"“]((?:[A-ZА-ЯЁ][\w.&+-]*|\d[\w.&+-]*)(?:[ \t](?:[A-ZА-ЯЁ][\w.&+-]*|\d[\w.&+-]*)){0,2})[»\"”]")

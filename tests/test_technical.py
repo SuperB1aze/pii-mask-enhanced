@@ -110,3 +110,75 @@ def test_roundtrip_and_idempotent():
     assert "{{USER_AGENT_1}}" in masked
     assert m.unmask(masked, mapping) == src
     assert m.mask(masked, mapping)[0] == masked
+
+
+# --- добивка: ОС, устройство, поведение на сайте, пользователь, баги ---
+
+@pytest.mark.parametrize("src, expected", [
+    # IMEI целиком: цифра слота - только вплотную или перед разделителем
+    ("IMEI 490154203237518", "IMEI {{DEVICE_1}}"),
+    ("IMEI1: 490154203237518", "IMEI1: {{DEVICE_1}}"),
+    ("IMEI 2: 490154203237518", "IMEI 2: {{DEVICE_1}}"),
+    ("IMSI 250011234567890", "IMSI {{DEVICE_1}}"),
+    ("ICCID 8970101234567890123", "ICCID {{DEVICE_1}}"),
+    # ОС
+    ("os: Android 13", "os: {{DEVICE_1}}"),
+    ("OS: iOS 17.2", "OS: {{DEVICE_1}}"),
+    ("os_version=13", "os_version={{DEVICE_1}}"),
+    ("platform: Windows 10, browser: Chrome", "platform: {{DEVICE_1}}, browser: Chrome"),
+    # идентификатор и модель устройства
+    ("device_id=a1b2c3d4e5f6a7b8", "device_id={{DEVICE_1}}"),
+    ("android_id: 9774d56d682e549c", "android_id: {{DEVICE_1}}"),
+    ("serial: R58N12ABCDE", "serial: {{DEVICE_1}}"),
+    ("модель SM-G991B", "модель {{DEVICE_1}}"),
+    ("model: iPhone 14 Pro, os: iOS 17", "model: {{DEVICE_1}}, os: {{DEVICE_2}}"),
+    ("модель телефона iPhone 14 Pro на базе iOS", "модель телефона {{DEVICE_1}} на базе iOS"),
+    # строка мобильного клиента
+    ("Dalvik/2.1.0 (Linux; U; Android 13; SM-G991B)", "{{USER_AGENT_1}}"),
+    ("MyBank/5.2.1 (iPhone; iOS 17.2; Scale/3.00)", "{{USER_AGENT_1}}"),
+    ("MyBank/5 CFNetwork/1410.0.3 Darwin/22.6.0", "{{USER_AGENT_1}}"),
+    # поведение на сайте
+    ("pageviews: 15", "pageviews: {{BEHAVIOR_1}}"),
+    ('"pageviews": 15', '"pageviews": {{BEHAVIOR_1}}'),
+    ("просмотрено страниц: 15", "просмотрено страниц: {{BEHAVIOR_1}}"),
+    ("session_duration: 00:12:34", "session_duration: {{BEHAVIOR_1}}"),
+    ("time_on_site=754", "time_on_site={{BEHAVIOR_1}}"),
+    ("время на сайте: 12 мин", "время на сайте: {{BEHAVIOR_1}}"),
+    ("?text=купить+квартиру&lr=213", "?text={{BEHAVIOR_1}}&lr=213"),
+    ("q=ипотека+сбербанк", "q={{BEHAVIOR_1}}"),
+    # запрос внутри полного адреса закрывается вместе с хостом
+    ("https://yandex.ru/search/?text=купить+квартиру", "{{URL_1}}"),
+    ("referrer=https%3A%2F%2Fsite.ru%2Fpage", "referrer={{URL_1}}"),
+    # пользователь и посетитель
+    ("user_id=1234567", "user_id={{SESSION_1}}"),
+    ("uid: 1234567", "uid: {{SESSION_1}}"),
+    ("client_id=1234567890.1700000000", "client_id={{SESSION_1}}"),
+    ("fingerprint: 3f2a9c145b6d4e71", "fingerprint: {{SESSION_1}}"),
+    # координаты из лога
+    ("geo: 55.75,37.61", "geo: {{ADDRESS_1}}"),
+])
+def test_technical_by_key(src, expected):
+    assert _mask(src) == expected
+
+
+def test_json_values_are_not_orgs():
+    """Латинское значение поля JSON - техническое, а не название организации в кавычках."""
+    assert _mask('{"name": "Chrome", "os": "Android 13"}') == \
+        '{"name": "Chrome", "os": "{{DEVICE_1}}"}'
+
+
+def test_cyrillic_json_value_still_an_org():
+    assert _mask('{"company": "Ромашка"}') == '{"company": "{{ORG_1}}"}'
+
+
+@pytest.mark.parametrize("src", [
+    "okhttp/4.9.3",                          # библиотека, а не устройство
+    "curl/8.4.0",
+    "Accept-Language: ru-RU,ru;q=0.9",       # q - вес языка, а не запрос
+    "device_id: unknown",                    # без цифры - не идентификатор
+    "модель 2025 года",
+    "модель автомобиля Kia Rio",
+    "текст про OS и платформу",
+])
+def test_technical_lookalikes_untouched(src):
+    assert _mask(src) == src

@@ -10,6 +10,12 @@ from ..entity import Entity
 from .spans import Span, inside
 
 
+def _json_field(text: str, m: re.Match) -> bool:
+    """Строка в кавычках - поле JSON: значение после '"ключ":' или сам ключ перед ':'."""
+    return bool(regs.JSON_KEY_BEFORE_RE.search(text, max(0, m.start() - 45), m.start())
+                or regs.JSON_KEY_AFTER_RE.match(text, m.end()))
+
+
 def _stems(name: str) -> list[str]:
     """Отличительные слова названия."""
     words = re.findall(r"[А-ЯЁA-Z][\w-]{2,}", name)
@@ -48,6 +54,8 @@ def orgs(text: str, org_names: tuple[str, ...]) -> list[Entity]:
     # последним: «Ромашка» внутри 'АО «Ромашка»' не выдаем второй раз
     for m in regs.ORG_QUOTED_NAME_RE.finditer(text):
         name = m.group(1)
+        if _json_field(text, m) and regs.LATIN_VALUE_RE.fullmatch(name):
+            continue
         if len(name) >= 3 and not inside(m.start(1), m.end(1), [(e.start, e.end) for e in out]):
             out.append(Entity("ORG", name, m.start(1), m.end(1), name.lower()))
 
