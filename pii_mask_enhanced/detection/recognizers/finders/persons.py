@@ -50,6 +50,13 @@ def health(text: str) -> list[Entity]:
     return out
 
 
+def clearance(text: str) -> list[Entity]:
+    """Допуск к гостайне и классный чин гражданской службы"""
+    return [Entity("PERSONAL", m.group(), m.start(), m.end(), " ".join(m.group().lower().split()))
+            for m in regs.CLEARANCE_RE.finditer(text)
+            if not re.match(r"[ \t]*:", text[m.end():])]
+
+
 def persons(text: str) -> list[Entity]:
     out: list[Entity] = []
     named: list[Span] = []
