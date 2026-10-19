@@ -42,6 +42,14 @@ def criminal(text: str) -> list[Entity]:
     return out
 
 
+def health(text: str) -> list[Entity]:
+    out = [Entity("PERSONAL", m.group(1), m.start(1), m.end(1), m.group(1).upper())
+           for m in regs.ICD_RE.finditer(text)]
+    out += [Entity("PERSONAL", m.group(), m.start(), m.end(), " ".join(m.group().lower().split()))
+            for m in regs.DISABILITY_RE.finditer(text)]
+    return out
+
+
 def persons(text: str) -> list[Entity]:
     out: list[Entity] = []
     named: list[Span] = []
