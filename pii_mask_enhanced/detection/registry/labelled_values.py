@@ -235,7 +235,14 @@ VALUES = (
                   r"\d{12}(?!\d)"),
     LabelledValue("счет депо", "PERSON_ID", r"(?:раздел\w*[ \t]+)?сч[её]т\w*[ \t]+депо", _CODE),
 
-    # секреты: по ним входят в систему или подтверждают личность
+    # Имя держателя карты
+    LabelledValue("держатель карты", "PERSON",
+                  r"(?:держател\w*|владел\w*)[ \t]+карт\w*|card[ \t]?holder(?:[ \t]+name)?"
+                  r"|имя[ \t]+(?:на[ \t]+карт\w*|держател\w*)|name[ \t]+on[ \t]+card",
+                  r"(?:[A-Z][A-Za-z'-]+(?:[ \t]+[A-Z][A-Za-z'.-]*){1,2}"
+                  r"|[А-ЯЁ][а-яёА-ЯЁ-]+(?:[ \t]+[А-ЯЁ][а-яёА-ЯЁ.-]*){1,2})(?![\w])",
+                  needs_sep=True),
+
     # "CVV-код", "код безопасности карты", "card verification value", "security code"
     LabelledValue("CVV", "SECRET",
                   r"(?:CVV2?|CVC2?|CAV2|CVP2|CVN2?|CID)(?:[ -]?код\w*)?"

@@ -33,3 +33,9 @@ _EXPIRY_WORD = (r"(?:срок\w*(?:[ \t]+действия)?(?:[ \t]+карты)?
 EXPIRY_AFTER_RE = re.compile(rf"[ \t,;]*(?:{_EXPIRY_WORD}[ \t:]*)?({CARD_EXPIRY})", re.IGNORECASE)
 # где угодно - только у подписи и только "ММ/ГГ": "действует до 31.12.2026" - срок договора
 EXPIRY_LABEL_RE = re.compile(rf"(?<!\w){_EXPIRY_WORD}[ \t:]*({CARD_EXPIRY})", re.IGNORECASE)
+# Подпись, которая бывает только у карты
+_EXPIRY_CARD_WORD = (r"(?:срок\w*[ \t]+действия[ \t]+карт\w*|карт\w*[ \t]+действ\w*[ \t]+до"
+                     r"|valid[ \t]+(?:thru|through|until)|exp(?:iry|iration|ires|\.)?(?:[ \t]+date)?"
+                     r"|(?-i:ММ/ГГ|MM/YY))")
+EXPIRY_CARD_LABEL_RE = re.compile(rf"(?<!\w){_EXPIRY_CARD_WORD}[ \t:]*({CARD_EXPIRY})",
+                                  re.IGNORECASE)

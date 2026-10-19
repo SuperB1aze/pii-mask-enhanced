@@ -198,10 +198,10 @@ def _labelled_details(text: str, known: list[Entity]) -> list[Entity]:
                 for m in regs.ISSUE_DATE_LABEL_RE.finditer(text)]
         for m in regs.ISSUED_FIELD_RE.finditer(text):
             out += _issue_tail(text, m.start(1), m.end(1))
-    if "CARD" in anchors:
-        out += [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1),
-                       source=sources.EXPIRY)
-                for m in regs.EXPIRY_LABEL_RE.finditer(text)]
+    # общая подпись срока ("действует до")
+    expiry = regs.EXPIRY_LABEL_RE if "CARD" in anchors else regs.EXPIRY_CARD_LABEL_RE
+    out += [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1), source=sources.EXPIRY)
+            for m in expiry.finditer(text)]
     return out
 
 

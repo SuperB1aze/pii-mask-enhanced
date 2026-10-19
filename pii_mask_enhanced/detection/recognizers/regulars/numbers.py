@@ -17,6 +17,21 @@ CARD_LABEL_RE = re.compile(
     r"(?<!\w)(?:карт\w*|card)(?:[ \t]+[^\W\d_]+){0,2}[ \t]*(?:№|:)?[ \t]*$", re.IGNORECASE
 )
 CARD_LENGTHS = range(15, 20)
+# Номер, скрытый частично: "2200 00** **** 1234", "4276XXXXXXXX5679", "**** **** **** 5679"
+CARD_MASK_CHARS = "*•·Xx×"
+CARD_MASKED_RE = re.compile(
+    r"(?<![\w*•·×])[\d*•·Xx×]{4}(?:[ -]?[\d*•·Xx×]{2,6}){2,4}(?![\w*•·×])")
+CARD_MASKED_FORM_RE = re.compile(r"(\d{4}|\d{6})?[*•·Xx×]{3,13}\d{4}")
+# Последние 4 цифры
+CARD_LAST4_RE = re.compile(r"(?<![\w*•·×])([*•·Xx×]{1,12}[ \t]?\d{4})(?!\d)")
+CARD_BRAND_LAST4_RE = re.compile(
+    r"(?<!\w)(?:MIR|Мир|МИР|Visa|VISA|MC|Mastercard|MasterCard|Maestro|UnionPay)"
+    r"[ \t]?[-–*•·]+[ \t]?(\d{4})(?!\d)")
+CARD_ENDING_RE = re.compile(
+    r"(?:оканчивающ|заканчивающ)\w*[ \t]+на[ \t]+(\d{4})(?!\d)"
+    r"|последни\w*[ \t]+(?:4|четыре)[ \t]+цифр\w*(?:[ \t]+номера)?(?:[ \t]+карт\w*)?[ \t:]*(\d{4})(?!\d)",
+    re.IGNORECASE)
+CARD_WORD_RE = re.compile(r"карт\w*|card|Visa|Mastercard|Maestro|\bМир\b|\bMIR\b", re.IGNORECASE)
 # Магнитная полоса
 CARD_TRACK1_RE = re.compile(r"%B(\d{12,19})\^[^^\n?]{2,26}\^\d{4}[^?\s]*\??")
 CARD_TRACK2_RE = re.compile(r";(\d{12,19})=\d{4}[\d]*\??|(?<![\w=;])(\d{12,19})=\d{7,}\??(?![\w=])")

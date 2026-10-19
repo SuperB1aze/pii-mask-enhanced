@@ -23,6 +23,39 @@ def cards(text: str) -> list[Entity]:
     return out
 
 
+def _masked_card_key(value: str) -> str:
+    return "".join("*" if c in regs.CARD_MASK_CHARS else c for c in value if c not in " -\t")
+
+
+def _card_word_near(text: str, start: int, end: int) -> bool:
+    return bool(regs.CARD_WORD_RE.search(text, max(0, start - 40), min(len(text), end + 20)))
+
+
+def masked_cards(text: str) -> list[Entity]:
+    """Номер карты, скрытый частично, и последние 4 цифры: по ним с остальными данными
+    карту находят в выписке или переписке."""
+    out = []
+    taken = []
+    for m in regs.CARD_MASKED_RE.finditer(text):
+        compact = re.sub(r"[ -]", "", m.group())
+        if 13 <= len(compact) <= 19 and regs.CARD_MASKED_FORM_RE.fullmatch(compact):
+            out.append(Entity("CARD", m.group(), m.start(), m.end(), _masked_card_key(m.group())))
+            taken.append(m.span())
+    for m in regs.CARD_LAST4_RE.finditer(text):
+        if any(s <= m.start() < e for s, e in taken):
+            continue
+        stars = sum(c in regs.CARD_MASK_CHARS for c in m.group(1))
+        # "****5679" - карта и без подписи; "*5679" - сноска и код
+        if stars >= 4 or _card_word_near(text, m.start(), m.end()):
+            out.append(Entity("CARD", m.group(1), m.start(1), m.end(1), _masked_card_key(m.group(1))))
+    for rx in (regs.CARD_BRAND_LAST4_RE, regs.CARD_ENDING_RE):
+        for m in rx.finditer(text):
+            g = 1 if m.group(1) else 2
+            if rx is regs.CARD_BRAND_LAST4_RE or _card_word_near(text, m.start(), m.end()):
+                out.append(Entity("CARD", m.group(g), m.start(g), m.end(g), "*" + m.group(g)))
+    return out
+
+
 def card_tracks(text: str) -> list[Entity]:
     out = []
     for rx in (regs.CARD_TRACK1_RE, regs.CARD_TRACK2_RE):

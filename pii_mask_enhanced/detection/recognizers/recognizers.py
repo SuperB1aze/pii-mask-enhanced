@@ -26,6 +26,7 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
         *technical.secrets(text),
         *numbers.card_tracks(text),
         *numbers.cards(text),
+        *numbers.masked_cards(text),
         *numbers.vins(text),
         *numbers.plates(text),
         *numbers.snils(text),
