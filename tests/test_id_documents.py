@@ -54,6 +54,32 @@ def test_document_masked(src, expected, preset):
     assert _mask(src, preset) == expected
 
 
+# --- документ гос. образца по "серия ... №" ---
+
+@pytest.mark.parametrize("preset", [None, "accounting", "resume"])
+@pytest.mark.parametrize("src, expected", [
+    ("серия 77 № 007893219", "серия {{GOVDOC_1}}"),
+    ("диплом серия 107724 № 0123456", "диплом серия {{GOVDOC_1}}"),
+    ("диплом серии ВСГ № 1234567", "диплом серии {{GOVDOC_1}}"),
+    ("аттестат серия 77 АБ № 1234567", "аттестат серия {{GOVDOC_1}}"),
+    ("сер. 77 номер 007893219", "сер. {{GOVDOC_1}}"),
+    # узнанный по слову документ сохраняет свой тип
+    ("паспорт серия 4510 № 123456", "паспорт серия {{PASSPORT_1}}"),
+    ("разрешение на работу серия 77 № 1234567890", "разрешение на работу серия {{IDDOC_1}}"),
+])
+def test_series_and_number_masked_in_every_preset(src, expected, preset):
+    """Раньше "серия ... №" был общим REQ, а его нет в пресетах - номер уходил наружу."""
+    assert _mask(src, preset) == expected
+
+
+@pytest.mark.parametrize("src", [
+    "серия фильмов 2019 года",
+    "серия 5 эпизод 12345",
+])
+def test_series_word_without_document(src):
+    assert _mask(src) == src
+
+
 @pytest.mark.parametrize("src", [
     "трудовая книжка ТК-IV 1234567",
     "вкладыш ВТ-I № 7654321",

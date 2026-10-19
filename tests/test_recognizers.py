@@ -727,9 +727,10 @@ def test_requisite_wrapped_after_keyword():
 
 
 def test_certificate_series_and_number():
+    """Серия и номер - один документ и одна метка, даже через перенос строки."""
     src = "зарегистрированном до 01.07.2002, серия 77\n№ 007893219)"
-    ents = types_of(src, "REQ")
-    assert [e.text for e in ents] == ["77", "007893219"]
+    ents = types_of(src, "GOVDOC")
+    assert [e.text for e in ents] == ["77\n№ 007893219"]
 
 
 def test_license_number_behind_a_phrase():

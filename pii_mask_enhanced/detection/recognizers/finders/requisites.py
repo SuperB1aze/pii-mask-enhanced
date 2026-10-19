@@ -6,6 +6,7 @@ from ...registry.entity_types import requisite_type
 from .. import helpers
 from .. import regulars as regs
 from ..entity import Entity, text_key
+from .numbers import id_doc_key
 
 
 def docrefs(text: str) -> list[Entity]:
@@ -94,6 +95,13 @@ def moex_codes(text: str) -> list[Entity]:
     """Торговый код Мосбиржи "MC" + 10 цифр - единственный код инвестора без подписи."""
     return [Entity("INVESTOR", m.group(), m.start(), m.end(), text_key(m.group()))
             for m in regs.MOEX_CODE_RE.finditer(text)]
+
+
+def gov_docs(text: str) -> list[Entity]:
+    """"серия 77 № 007893219" - серия и номер одной меткой"""
+    return [Entity("GOVDOC", m.group(1), m.start(1), m.end(1), id_doc_key(m.group(1)),
+                   source=sources.REQUISITE)
+            for m in regs.GOVDOC_RE.finditer(text)]
 
 
 def doc_numbers(text: str) -> list[Entity]:
