@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ...registry.entity_types import REQUISITE_WORD
-from ...registry.labelled_values import INCOME_AMOUNT, INCOME_LABEL, VALUES
+from ...registry.labelled_values import (BALANCE_AMOUNT, BALANCE_LABEL, INCOME_AMOUNT,
+                                         INCOME_LABEL, VALUES)
 from .. import helpers
 from ..entity import digits, text_key
 
@@ -102,13 +103,22 @@ def _labelled_value(v) -> LabelledValueRe:
 
 LABELLED_VALUES = tuple(_labelled_value(v) for v in VALUES)
 
+def _money_after(label: str, amount: str) -> re.Pattern:
+    """Сумма через несколько слов после подписи: "оклад в размере 120 000 руб.",
+    "остаток на счете на 01.03.2024 составил 125 430,15". Между ними - без цифр, кроме
+    даты и года, в пределах строки и колонки."""
+    return re.compile(
+        rf"(?<![\w/])(?:{label})(?![\w/])"
+        rf"((?:[^\d\n%|]|{helpers.DATE}|(?:19|20)\d{{2}}[ \t]*г(?:од\w*|\.)){{1,60}}?)"
+        rf"((?-i:{amount}))",
+        re.IGNORECASE,
+    )
+
+
 # Доход со словами между подписью и суммой
-INCOME_RE = re.compile(
-    rf"(?<![\w/])(?:{INCOME_LABEL})(?![\w/])"
-    rf"((?:[^\d\n%|]|{helpers.DATE}|(?:19|20)\d{{2}}[ \t]*г(?:од\w*|\.)){{1,60}}?)"
-    rf"((?-i:{INCOME_AMOUNT}))",
-    re.IGNORECASE,
-)
+INCOME_RE = _money_after(INCOME_LABEL, INCOME_AMOUNT)
+# остаток по счету и задолженность по кредиту
+BALANCE_RE = _money_after(BALANCE_LABEL, BALANCE_AMOUNT)
 
 def value_group(m: re.Match) -> int:
     """Группа со значением: у подписи с разделителем два варианта записи, у остальных один."""

@@ -67,6 +67,8 @@ TYPES = (
     EntityType("POSITION", 9, in_default=True, in_presets=True),
     # доход и удержания человека: оклад, зарплата, пенсия, алименты, "удержано"
     EntityType("INCOME", 6, in_default=True, in_presets=True),
+    # остаток по счету, карте, вкладу и задолженность по кредиту
+    EntityType("BALANCE", 6, in_default=True, in_presets=True),
     # назначение платежа закрывается целиком
     EntityType("PAYMENT", 3, in_default=True, in_presets=True),
     EntityType("DOCREF", 6, in_presets=True),

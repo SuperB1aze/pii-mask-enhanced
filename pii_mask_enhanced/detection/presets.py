@@ -16,6 +16,8 @@ class Preset:
     inn_needs_label: bool = True
     # должность - содержание резюме: без нее модель не ответит ни на один вопрос о кандидате
     keep_positions: bool = False
+    # остаток на счете и долг по кредиту - предмет анализа в бухгалтерии
+    keep_balances: bool = False
 
 
 _PRESETS = {
@@ -25,6 +27,7 @@ _PRESETS = {
         types=TYPES,
         # Контрагент в бухгалтерском документе всегда с правовой формой, торговая марка - никогда
         ner_org_needs_form=True,
+        keep_balances=True,
     ),
     "resume": Preset(
         name="resume",

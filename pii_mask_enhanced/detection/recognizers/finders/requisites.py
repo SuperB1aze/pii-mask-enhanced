@@ -85,10 +85,11 @@ def labelled_values(text: str) -> list[Entity]:
 
 
 def incomes(text: str) -> list[Entity]:
-    """Сумма дохода или удержания через несколько слов после подписи."""
-    return [Entity("INCOME", m.group(2), m.start(2), m.end(2), text_key(m.group(2)),
+    """Сумма дохода, удержания, остатка по счету или долга через несколько слов после подписи."""
+    return [Entity(etype, m.group(2), m.start(2), m.end(2), text_key(m.group(2)),
                    source=sources.REQUISITE)
-            for m in regs.INCOME_RE.finditer(text)]
+            for etype, rx in (("INCOME", regs.INCOME_RE), ("BALANCE", regs.BALANCE_RE))
+            for m in rx.finditer(text)]
 
 
 def moex_codes(text: str) -> list[Entity]:

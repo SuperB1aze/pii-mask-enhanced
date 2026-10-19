@@ -60,3 +60,71 @@ def test_not_an_income(src):
 
 def test_income_in_table_cell():
     assert cell_label_type("Оклад", "120 000,00") == "INCOME"
+
+
+# --- остаток по счету и задолженность по кредиту ---
+
+def _mask_preset(text: str, preset: str, types: tuple[str, ...] = ()) -> str:
+    from pii_mask_enhanced.engine.settings import Options, build_masker
+
+    m, _ = build_masker(Options(preset=preset, types=types, ner=False), lambda: None)
+    return m.mask(text)[0]
+
+
+BALANCES = [
+    ("остаток по счету 125 430,15 руб.", "остаток по счету {{BALANCE_1}}"),
+    ("Остаток на карте: -1 250,00", "Остаток на карте: {{BALANCE_1}}"),     # овердрафт
+    ("остаток денежных средств на счете на 01.03.2024 составил 125 430,15 руб.",
+     "остаток денежных средств на счете на 01.03.2024 составил {{BALANCE_1}}"),
+    ("баланс карты 12 500 ₽", "баланс карты {{BALANCE_1}}"),
+    ("доступный остаток 8 400,00", "доступный остаток {{BALANCE_1}}"),
+    ("Входящий остаток: 125 430,15", "Входящий остаток: {{BALANCE_1}}"),
+    ("исходящее сальдо 98 000,00", "исходящее сальдо {{BALANCE_1}}"),
+    ("сумма вклада 500 000", "сумма вклада {{BALANCE_1}}"),
+    # задолженность по кредиту
+    ("остаток основного долга по кредиту 1 200 000 руб.",
+     "остаток основного долга по кредиту {{BALANCE_1}}"),
+    ("просроченная задолженность 15 300,50", "просроченная задолженность {{BALANCE_1}}"),
+    ("сумма задолженности по кредитной карте 42 000",
+     "сумма задолженности по кредитной карте {{BALANCE_1}}"),
+    ("задолженность по ипотеке 3,2 млн руб.", "задолженность по ипотеке {{BALANCE_1}}"),
+    ("кредитный лимит 300 000", "кредитный лимит {{BALANCE_1}}"),
+    ("сумма кредита 1 000 000 руб.", "сумма кредита {{BALANCE_1}}"),
+]
+
+
+@pytest.mark.parametrize("src, expected", BALANCES)
+def test_balance_masked(src, expected):
+    assert _mask(src) == expected
+
+
+@pytest.mark.parametrize("src, _", BALANCES)
+def test_accounting_preset_keeps_balance(src, _):
+    """Остаток и долг - предмет анализа в бухгалтерии: набор accounting их оставляет."""
+    assert "{{BALANCE" not in _mask_preset(src, "accounting")
+
+
+def test_resume_preset_masks_balance():
+    assert _mask_preset("остаток по счету 125 430,15 руб.", "resume") == \
+        "остаток по счету {{BALANCE_1}}"
+
+
+def test_explicit_types_win_over_accounting_preset():
+    """Явный --types - воля вызывающего, как и с должностью в наборе resume."""
+    assert _mask_preset("остаток по счету 125 430,15 руб.", "accounting", ("BALANCE",)) == \
+        "остаток по счету {{BALANCE_1}}"
+
+
+@pytest.mark.parametrize("src", [
+    "Остаток: 125 430,15 руб.",              # без счета, карты или вклада - чей неизвестно
+    "остаток на складе 120 шт.",
+    "сальдо на начало периода 125 430,15",   # оборотно-сальдовая ведомость
+    "Баланс на 31.12.2024 1 200 000",        # бухгалтерская форма
+    "остаток по счету 60 1 200 000",         # счет учета компании: номер прерывает поиск
+])
+def test_not_a_personal_balance(src):
+    assert _mask(src) == src
+
+
+def test_balance_in_table_cell():
+    assert cell_label_type("Входящий остаток", "125 430,15") == "BALANCE"

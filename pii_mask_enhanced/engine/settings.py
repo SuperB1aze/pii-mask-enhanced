@@ -51,9 +51,11 @@ def build_masker(opts: Options, probe: Callable[[], str | None]) -> tuple[Masker
             needs_form = not profile.looks_like_resume(text)
 
     types = opts.types or (preset.types if preset else DEFAULT_TYPES)
-    # явный --types - воля вызывающего; набор resume оставляет должность
-    if not opts.types and preset and preset.keep_positions:
-        types = tuple(t for t in types if t != "POSITION")
+    if not opts.types and preset:
+        kept = {"POSITION"} if preset.keep_positions else set()
+        if preset.keep_balances:
+            kept.add("BALANCE")
+        types = tuple(t for t in types if t not in kept)
 
     masker = Masker(
         types=types,
