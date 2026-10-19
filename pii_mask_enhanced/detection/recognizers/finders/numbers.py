@@ -198,4 +198,9 @@ def passports(text: str) -> list[Entity]:
         window = text[max(0, m.start() - 40):m.start()]
         if whole_doc or regs.PASSPORT_CTX_RE.search(window):
             out.append(Entity("PASSPORT", m.group(), m.start(), m.end(), digits(m.group())))
+
+    for m in regs.PASSPORT_SOLID_RE.finditer(text):
+        if regs.PASSPORT_SOLID_LABEL_RE.search(text[max(0, m.start() - 60):m.start()]):
+            out.append(Entity("PASSPORT", m.group(), m.start(), m.end(), m.group(),
+                              source=sources.REQUISITE))
     return out

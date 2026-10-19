@@ -25,6 +25,17 @@ BIRTH_DATE_RE = re.compile(
     r"(?:родил(?:ся|ась)|дата\s+рожд\w*\.?\s*[:\-]?|д\.?\s?р\.?\s*[:\-]?)\s*"
     rf"({helpers.DATE})",
     re.IGNORECASE)
+# Дата смерти
+DEATH_DATE_RE = re.compile(
+    r"(?<!\w)(?:умер(?:ла)?|скончал(?:ся|ась)|погиб(?:ла)?|ум\.|"
+    r"дат\w*\s+(?:смерти|кончины|гибели)\.?\s*[:\-]?)\s*"
+    rf"(?:\s*в\s+)?({helpers.DATE})",
+    re.IGNORECASE)
+DEATH_YEAR_RE = re.compile(
+    r"(?<!\w)(?:год\w*\s+(?:смерти|кончины|гибели)|умер(?:ла)?\s+в|скончал(?:ся|ась)\s+в"
+    r"|погиб(?:ла)?\s+в)\s*[:\-]?\s*((?:19|20)\d{2})(?!\d)",
+    re.IGNORECASE)
+
 # звание, степень, семейное положение, возраст - рядом с найденным ФИО (engine/propagation)
 PERSON_TERMS_RE = re.compile(
     "|".join(rf"(?<!\w)(?:{t})(?!\w)" for t in PERSON_TERMS), re.IGNORECASE)

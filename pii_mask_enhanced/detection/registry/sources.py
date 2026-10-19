@@ -16,6 +16,7 @@ NO_REPEAT = frozenset({EXPIRY, PERSON_TERM})
 REPEAT = "repeat"          # повтор уже найденного значения
 PERSON_TOKEN = "person-token"
 BIRTH = "birth"
+DEATH = "death"
 RESIDENCE = "residence"
 PROFILE = "profile"        # ник в строке "GitHub: nick"
 

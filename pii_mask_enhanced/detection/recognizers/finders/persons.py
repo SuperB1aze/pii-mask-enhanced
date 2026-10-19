@@ -18,6 +18,11 @@ def birth_dates(text: str) -> list[Entity]:
         g = 1 if m.group(1) else 2
         out.append(Entity("DATE", m.group(g), m.start(g), m.end(g), m.group(g),
                           source=sources.BIRTH))
+    # дата и год смерти
+    for rx in (regs.DEATH_DATE_RE, regs.DEATH_YEAR_RE):
+        out += [Entity("DATE", m.group(1), m.start(1), m.end(1), m.group(1).lower(),
+                       source=sources.DEATH)
+                for m in rx.finditer(text)]
     return out
 
 
