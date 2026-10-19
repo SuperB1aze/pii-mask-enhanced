@@ -280,6 +280,10 @@ VALUES = (
                   rf"{_COUNTRY}(?!\w)"),
     # национальность - специальная категория ПД (ст. 10 152-ФЗ); без подписи "русская кухня" не ПД
     LabelledValue("национальность", "PERSONAL", r"национальност\w*", _WORDS, needs_sep=True),
+    # судимость
+    LabelledValue("судимость", "PERSONAL",
+                  r"(?:сведени\w*[ \t]+о[ \t]+|наличи\w*[ \t]+)?судимост\w*", _TO_LINE_END,
+                  needs_sep=True),
     LabelledValue("по национальности", "PERSONAL", r"по[ \t]+национальности", _WORDS),
     LabelledValue("семейное положение", "PERSONAL", r"семейн\w*[ \t]+положени\w*", _WORDS,
                   needs_sep=True),

@@ -26,6 +26,22 @@ def birth_dates(text: str) -> list[Entity]:
     return out
 
 
+def criminal(text: str) -> list[Entity]:
+    # судимость
+    out = [Entity("PERSONAL", m.group(), m.start(), m.end(), " ".join(m.group().lower().split()))
+           for m in regs.CRIMINAL_STATUS_RE.finditer(text)]
+    for m in regs.CRIMINAL_ARTICLE_RE.finditer(text):
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        line_end = text.find("\n", m.end())
+        line_end = len(text) if line_end < 0 else line_end
+        lo = max(line_start, m.start() - regs.CRIMINAL_WINDOW)
+        hi = min(line_end, m.end() + regs.CRIMINAL_WINDOW)
+        if regs.CRIMINAL_TRIGGER_RE.search(text, lo, hi):
+            out.append(Entity("PERSONAL", m.group(), m.start(), m.end(),
+                              " ".join(m.group().lower().split())))
+    return out
+
+
 def persons(text: str) -> list[Entity]:
     out: list[Entity] = []
     named: list[Span] = []

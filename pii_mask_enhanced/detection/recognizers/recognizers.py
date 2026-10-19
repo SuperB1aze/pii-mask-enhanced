@@ -13,6 +13,7 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
     found = [
         *contacts.profile_nicks(text),
         *persons.birth_dates(text),
+        *persons.criminal(text),
         *addresses.residences(text),
         *contacts.emails(text),
         *contacts.telegram(text),
