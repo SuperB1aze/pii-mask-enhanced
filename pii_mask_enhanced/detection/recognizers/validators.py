@@ -80,6 +80,14 @@ class Validator:
         return chk == expected
 
     @staticmethod
+    def account_key_ok(account: str, bik: str) -> bool:
+        if len(account) != 20 or len(bik) != 9:
+            return False
+        prefix = "0" + bik[4:6] if account.startswith("301") else bik[-3:]
+        digs = prefix + account
+        return sum(int(d) * (7, 1, 3)[i % 3] for i, d in enumerate(digs)) % 10 == 0
+
+    @staticmethod
     def okpo_ok(num: str) -> bool:
         num = num.strip()
         if not num.isdigit() or len(num) not in (8, 10, 14):
@@ -88,7 +96,7 @@ class Validator:
         digits = [int(c) for c in num]
         body, check = digits[:-1], digits[-1]
 
-        # веса идут по кругу 1..10: у ИП во втором проходе 9-я цифра - на 1, а не на 11
+        # веса идут по кругу 1..10
         def calc(start: int) -> int:
             return sum(d * ((start - 1 + i) % 10 + 1) for i, d in enumerate(body)) % 11
 

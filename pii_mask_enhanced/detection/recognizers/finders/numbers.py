@@ -122,6 +122,28 @@ def plates(text: str) -> list[Entity]:
     return out
 
 
+def _account_structure_ok(num: str) -> bool:
+    return (bool(regs.ACCOUNT_BALANCE_RE.match(num))
+            and num[5:8] in regs.ACCOUNT_CURRENCIES)
+
+
+def accounts_bare(text: str) -> list[Entity]:
+    """Счет без подписи: балансовый счет и валюта по плану счетов"""
+    biks = None
+    out = []
+    for m in regs.ACCOUNT_BARE_RE.finditer(text):
+        num = digits(m.group())
+        ok = _account_structure_ok(num)
+        if not ok:
+            if biks is None:
+                biks = {b.group() for b in regs.BIK_RU_RE.finditer(text)}
+            ok = any(Validator.account_key_ok(num, b) for b in biks)
+        if ok:
+            # ключ - цифры: та же метка, что у счета с подписью "р/с"
+            out.append(Entity("ACCOUNT", m.group(), m.start(), m.end(), num, source=sources.BARE))
+    return out
+
+
 def inns(text: str) -> list[Entity]:
     # без подписи "ИНН" - строгий режим ядра это учитывает
     return [Entity("INN", m.group(), m.start(), m.end(), m.group(), source=sources.BARE)
