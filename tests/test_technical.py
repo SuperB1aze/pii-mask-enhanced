@@ -178,3 +178,30 @@ def test_cyrillic_json_value_still_an_org():
 ])
 def test_technical_lookalikes_untouched(src):
     assert _mask(src) == src
+
+
+# --- внутренняя сеть: хост во внутренней зоне и сетевой путь ---
+
+@pytest.mark.parametrize("src, expected", [
+    ("подключиться к srv-db01.corp.local:5432", "подключиться к {{URL_1}}:5432"),
+    ("fs01.lan", "{{URL_1}}"),
+    ("портал app.internal", "портал {{URL_1}}"),
+    ("nas.home.arpa", "{{URL_1}}"),
+    (r"файл лежит в \\fileserver01\share\Отдел кадров\отчет.xlsx, см.",
+     "файл лежит в {{URL_1}}, см."),
+    (r"\\10.0.5.1\backup", "{{URL_1}}"),
+    (r"путь \\FS01\Docs\2024", "путь {{URL_1}}"),
+])
+def test_internal_host_and_unc_path(src, expected):
+    assert _mask(src) == expected
+
+
+@pytest.mark.parametrize("src", [
+    r"C:\Windows\system32",                  # локальный путь - не адрес в сети
+    r"строка с \\n внутри",                 # экранированный перевод строки в JSON
+    "версия 1.2.local",                      # в имени нет букв
+    "сервер srv-db01",                       # имя без зоны - нейросети
+    "localhost",
+])
+def test_internal_host_lookalikes_untouched(src):
+    assert _mask(src) == src

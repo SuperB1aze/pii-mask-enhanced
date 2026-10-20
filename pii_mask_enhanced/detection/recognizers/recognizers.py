@@ -10,7 +10,6 @@ from .finders import (addresses, contacts, numbers, orgs, persons, requisites, s
 
 def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Entity]:
     """Найти форматные ПД. org_names - словарь организаций (load_org_dict)."""
-    # Порядок важен: при равном приоритете, длине и начале спана побеждает найденное раньше.
     found = [
         *contacts.profile_nicks(text),
         *persons.birth_dates(text),
@@ -25,6 +24,7 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
         *contacts.phones(text),
         *technical.user_agents(text),
         *technical.ips(text),
+        *technical.internal_hosts(text),
         *technical.devices(text),
         *technical.sessions(text),
         *technical.behavior(text),

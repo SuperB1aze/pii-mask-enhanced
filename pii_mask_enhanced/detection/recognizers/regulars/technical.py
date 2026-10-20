@@ -95,6 +95,16 @@ URL_CREDS_RE = re.compile(r"(?<=://)([^:/@\s]+):([^@/\s]+)@")
 # доменная учетная запись Windows "CORP\ivanov_i"; "\" вокруг - уже путь: "C:\WINDOWS\system32"
 DOMAIN_LOGIN_RE = re.compile(r"(?<![\w\\:])[A-Z][A-Z0-9-]{1,14}\\[A-Za-z][\w.-]{1,63}(?![\w\\])")
 
+# Внутренняя сеть
+_HOST_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+INTERNAL_HOST_RE = re.compile(
+    rf"(?<![\w.@-])(?=[\w-]*[a-z])(?:{_HOST_LABEL}\.)+(?:local|localdomain|corp|lan|internal|intra|intranet"
+    r"|home\.arpa)(?![\w.-])",
+    re.IGNORECASE)
+UNC_PATH_RE = re.compile(
+    r"(?<![\w\\])\\\\[A-Za-z0-9][\w.-]{0,62}"
+    r"(?:\\[^\\\n/:*?\"<>|,;]+(?=\\)|\\[^\\\s/:*?\"<>|,;]+)+")
+
 # Хэш пароля в формате crypt
 PASSWORD_HASH_RE = re.compile(
     r"(?<![\w$])(?:\$(?:2[abxy]|argon2(?:id|i|d)|1|5|6|y|gy|7|apr1|scrypt|pbkdf2(?:-sha\d+)?)\$"

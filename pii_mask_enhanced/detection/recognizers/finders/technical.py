@@ -79,6 +79,12 @@ def behavior(text: str) -> list[Entity]:
     return out + _by_key("URL", regs.REFERRER_RE, text)
 
 
+def internal_hosts(text: str) -> list[Entity]:
+    """Хост во внутренней зоне и сетевой путь - адрес внутри сети организации."""
+    return [from_match("URL", m, key=str.lower)
+            for rx in (regs.INTERNAL_HOST_RE, regs.UNC_PATH_RE) for m in rx.finditer(text)]
+
+
 def credentials(text: str) -> list[Entity]:
     """Логин и пароль парой: "логин/пароль: a / b", "https://a:b@host", доменное "CORP\\a"."""
     out = []
