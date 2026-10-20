@@ -71,15 +71,13 @@ REFERRER_RE = _key_value(r"referr?er|http[_-]?referr?er", r"[^&\s\"']{4,}")
 # заголовок.нагрузка.подпись в base64url; без подписи ("alg": "none") подпись пустая
 JWT_RE = re.compile(r"(?<![\w-])eyJ[\w-]{5,}\.eyJ[\w-]{5,}\.[\w-]*(?![\w-])")
 # значение по ключу; в значении есть цифра: "session: утро" - не идентификатор
-SESSION_RE = re.compile(
-    r"(?<![\w-])(?:PHPSESSID|JSESSIONID|ASP\.NET_SessionId|session[_-]?id|session|sid|ssid"
+SESSION_RE = _key_value(
+    r"PHPSESSID|JSESSIONID|ASP\.NET_SessionId|session[_-]?id|session|sid|ssid"
     r"|(?:access|refresh|id|auth|csrf)[_-]?token|token|api[_-]?key|yandexuid|_ym_uid|_ga"
     # пользователь и посетитель в логах и аналитике
     r"|user[_-]?id|uid|client[_-]?id|visitor[_-]?id|customer[_-]?id|ym[_-]?uid"
-    r"|(?:device[_-]?|browser[_-]?)?fingerprint)"
-    r"[\"']?[ \t]*[=:][ \t]*[\"']?((?=[\w.~+/%-]*\d)[\w.~+/%-]{6,}=*)",
-    re.IGNORECASE,
-)
+    r"|(?:device[_-]?|browser[_-]?)?fingerprint",
+    r"(?=[\w.~+/%-]*\d)[\w.~+/%-]{6,}=*")
 BEARER_RE = re.compile(r"(?<!\w)Bearer[ \t]+([\w.~+/-]{10,}=*)", re.IGNORECASE)
 # в заголовке cookie закрываем значения, имена оставляем: по ним видно, что за cookie
 COOKIE_HEADER_RE = re.compile(r"^[ \t]*(?:Set-)?Cookie[ \t]*:[ \t]*(.+)$",

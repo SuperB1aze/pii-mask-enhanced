@@ -4,7 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from .entity import Entity
-from .finders import addresses, contacts, numbers, orgs, persons, requisites, spans, technical
+from .finders import (addresses, contacts, numbers, orgs, persons, requisites, spans,
+                      special, technical)
 
 
 def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Entity]:
@@ -13,10 +14,10 @@ def find_format_entities(text: str, org_names: tuple[str, ...] = ()) -> list[Ent
     found = [
         *contacts.profile_nicks(text),
         *persons.birth_dates(text),
-        *persons.criminal(text),
-        *persons.health(text),
-        *persons.clearance(text),
-        *persons.shares(text),
+        *special.criminal(text),
+        *special.health(text),
+        *special.clearance(text),
+        *special.shares(text),
         *addresses.residences(text),
         *contacts.emails(text),
         *contacts.telegram(text),

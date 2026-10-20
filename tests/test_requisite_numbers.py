@@ -4,11 +4,8 @@ import pytest
 
 from pii_mask_enhanced.detection.recognizers.finders import numbers
 from pii_mask_enhanced.detection.recognizers.validators import Validator
-from pii_mask_enhanced.engine.core import Masker
 
-
-def _mask(text: str) -> str:
-    return Masker(ner=False).mask(text)[0]
+from masking import mask as _mask
 
 
 def _texts(finder, text: str) -> list[str]:
@@ -87,20 +84,3 @@ def test_kpp_wrong_format_is_req():
                                      ("77AB01001", False)])
 def test_kpp_ok(num, ok):
     assert Validator.kpp_ok(num) is ok
-
-
-# --- даты ---
-
-@pytest.mark.parametrize("src", ["«5» марта 2024 года", "5 марта 2024 года", "05.03.2024"])
-def test_date_found(src):
-    assert _texts(numbers.dates, src) == [src]
-
-
-@pytest.mark.parametrize("src", [
-    "5 марта 2024",            # без "года"
-    "32.01.2024",
-    "05.13.2024",
-    "105.03.2024",
-])
-def test_date_lookalikes_ignored(src):
-    assert numbers.dates(src) == []

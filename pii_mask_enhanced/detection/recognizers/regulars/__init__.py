@@ -10,4 +10,5 @@ from .numbers import *  # noqa: F401,F403
 from .orgs import *  # noqa: F401,F403
 from .persons import *  # noqa: F401,F403
 from .requisites import *  # noqa: F401,F403
+from .special import *  # noqa: F401,F403
 from .technical import *  # noqa: F401,F403

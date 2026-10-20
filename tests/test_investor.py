@@ -9,9 +9,7 @@ import pytest
 from pii_mask_enhanced.engine.core import Masker
 from pii_mask_enhanced.formats.office_xml import cell_label_type
 
-
-def _mask(text: str) -> str:
-    return Masker(ner=False).mask(text)[0]
+from masking import mask as _mask
 
 
 @pytest.mark.parametrize("src,expected", [

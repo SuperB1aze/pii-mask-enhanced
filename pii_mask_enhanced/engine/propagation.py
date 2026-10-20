@@ -7,7 +7,8 @@ import re
 from ..detection.ner import morph
 from ..detection.ner.helpers import STOP_TERMS
 from ..detection.recognizers import regulars as regs
-from ..detection.recognizers.entity import Entity
+from ..detection.recognizers.entity import Entity, from_match, text_key
+from ..detection.recognizers.finders.spans import line_window
 from ..detection.recognizers.regulars import DATE_AFTER_RE, ORG_FORM_RE
 from ..detection.registry import sources
 
@@ -108,8 +109,7 @@ def _issuer(text: str, start: int, end: int) -> Entity | None:
     if len(name) < 3 or not any(c.isupper() for c in name):
         return None
     at = start + seg.index(name)
-    return Entity("ISSUER", name, at, at + len(name), " ".join(name.lower().split()),
-                  source=sources.ISSUE)
+    return Entity("ISSUER", name, at, at + len(name), text_key(name), source=sources.ISSUE)
 
 
 def _after_docref(text: str, ent: Entity) -> list[Entity]:
@@ -163,16 +163,10 @@ def _after_card(text: str, ent: Entity) -> list[Entity]:
 def _near_person(text: str, ent: Entity) -> list[Entity]:
     # звание стоит до ФИО ("капитан Иванов"), степень и возраст - после ("Иванов, к.т.н., 38 лет");
     # окно не переходит строку: на следующей - уже про другое
-    line_start = text.rfind("\n", 0, ent.start) + 1
-    line_end = text.find("\n", ent.end)
-    line_end = len(text) if line_end < 0 else line_end
-    out = []
-    for lo, hi in ((max(line_start, ent.start - regs.PERSON_TERMS_WINDOW), ent.start),
-                   (ent.end, min(line_end, ent.end + regs.PERSON_TERMS_WINDOW))):
-        out += [Entity("PERSONAL", m.group(), m.start(), m.end(), m.group().lower(),
-                       source=sources.PERSON_TERM)
-                for m in regs.PERSON_TERMS_RE.finditer(text, lo, hi)]
-    return out
+    lo, hi = line_window(text, ent.start, ent.end, regs.PERSON_TERMS_WINDOW)
+    return [from_match("PERSONAL", m, key=str.lower, source=sources.PERSON_TERM)
+            for left, right in ((lo, ent.start), (ent.end, hi))
+            for m in regs.PERSON_TERMS_RE.finditer(text, left, right)]
 
 
 # тип якоря -> что искать рядом с ним

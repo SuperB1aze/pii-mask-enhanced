@@ -5,11 +5,7 @@ test_secrets. Номера в тестах выдуманные.
 """
 import pytest
 
-from pii_mask_enhanced.engine.core import Masker
-
-
-def _mask(text: str) -> str:
-    return Masker(ner=False).mask(text)[0]
+from masking import mask as _mask
 
 
 # --- номер, скрытый частично ---

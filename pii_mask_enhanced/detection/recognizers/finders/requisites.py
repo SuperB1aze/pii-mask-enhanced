@@ -5,8 +5,7 @@ from ...registry import sources
 from ...registry.entity_types import requisite_type
 from .. import helpers
 from .. import regulars as regs
-from ..entity import Entity, text_key
-from .numbers import id_doc_key
+from ..entity import Entity, as_is, from_match, id_doc_key
 
 
 def docrefs(text: str) -> list[Entity]:
@@ -18,11 +17,9 @@ def docrefs(text: str) -> list[Entity]:
         # без "№" голое число - скорее сумма
         if not m.group(1) and num.isdigit():
             continue
-        out.append(Entity("DOCREF", num, m.start(2), m.end(2), num.lower(),
-                          source=sources.DOCREF))
+        out.append(from_match("DOCREF", m, 2, key=str.lower, source=sources.DOCREF))
         if m.group(3):
-            out.append(Entity("DATE", m.group(3), m.start(3), m.end(3), m.group(3),
-                              source=sources.DOCREF))
+            out.append(from_match("DATE", m, 3, key=as_is, source=sources.DOCREF))
     return out
 
 
@@ -40,11 +37,14 @@ def client_docnums(text: str) -> list[Entity]:
             continue
         if sum(c.isdigit() for c in num) < helpers.CLIENT_DOCNUM_MIN_DIGITS:
             continue
-        # "12345 / ФЛ" и "12345/ФЛ" - один номер, одна метка
-        key = "".join(num.split()).lower()
-        out.append(Entity("DOCREF", num, m.start(), m.end(), key, source=sources.DOCREF))
-        out.append(Entity("REQ", num, m.start(), m.end(), key))
+        out.append(from_match("DOCREF", m, key=_docnum_key, source=sources.DOCREF))
+        out.append(from_match("REQ", m, key=_docnum_key))
     return out
+
+
+def _docnum_key(value: str) -> str:
+    # "12345 / ФЛ" и "12345/ФЛ" - один номер, одна метка
+    return "".join(value.split()).lower()
 
 
 def paired(text: str) -> list[Entity]:
@@ -67,46 +67,38 @@ def paired(text: str) -> list[Entity]:
 
 
 def labelled(text: str) -> list[Entity]:
-    return [Entity(requisite_type(m.group(1), m.group(2)), m.group(2), m.start(2), m.end(2),
-                   m.group(2), source=sources.REQUISITE)
+    return [from_match(requisite_type(m.group(1), m.group(2)), m, 2, key=as_is,
+                       source=sources.REQUISITE)
             for m in regs.REQUISITE_RE.finditer(text)]
 
 
 def labelled_values(text: str) -> list[Entity]:
     """Значения из registry/labelled_values: счет, код инвестора, ЕСИА ID, логин, PIN, пол..."""
-    out = []
-    for lv in regs.LABELLED_VALUES:
-        for m in lv.text.finditer(text):
-            g = regs.value_group(m)
-            value = m.group(g)
-            out.append(Entity(lv.type, value, m.start(g), m.end(g), lv.key(value),
-                              source=sources.REQUISITE))
-    return out
+    return [from_match(lv.type, m, regs.value_group(m), key=lv.key, source=sources.REQUISITE)
+            for lv in regs.LABELLED_VALUES for m in lv.text.finditer(text)]
 
 
 def incomes(text: str) -> list[Entity]:
     """Сумма дохода, удержания, остатка по счету или долга через несколько слов после подписи."""
-    return [Entity(etype, m.group(2), m.start(2), m.end(2), text_key(m.group(2)),
-                   source=sources.REQUISITE)
+    return [from_match(etype, m, 2, source=sources.REQUISITE)
             for etype, rx in (("INCOME", regs.INCOME_RE), ("BALANCE", regs.BALANCE_RE))
             for m in rx.finditer(text)]
 
 
 def moex_codes(text: str) -> list[Entity]:
     """Торговый код Мосбиржи "MC" + 10 цифр - единственный код инвестора без подписи."""
-    return [Entity("INVESTOR", m.group(), m.start(), m.end(), text_key(m.group()))
-            for m in regs.MOEX_CODE_RE.finditer(text)]
+    return [from_match("INVESTOR", m) for m in regs.MOEX_CODE_RE.finditer(text)]
 
 
 def gov_docs(text: str) -> list[Entity]:
-    """"серия 77 № 007893219" - серия и номер одной меткой"""
-    return [Entity("GOVDOC", m.group(1), m.start(1), m.end(1), id_doc_key(m.group(1)),
-                   source=sources.REQUISITE)
+    """"серия 77 № 007893219" - серия и номер одной меткой; паспорт и документы из
+    registry/id_documents узнаются точнее и при пересечении побеждают по приоритету."""
+    return [from_match("GOVDOC", m, 1, key=id_doc_key, source=sources.REQUISITE)
             for m in regs.GOVDOC_RE.finditer(text)]
 
 
 def doc_numbers(text: str) -> list[Entity]:
     """Номера, отделенные от слова фразой: "Лицензия на ... №1326"."""
-    return [Entity("REQ", m.group(g), m.start(g), m.end(g), m.group(g))
+    return [from_match("REQ", m, g, key=as_is)
             for rx in regs.DOC_REQUISITE_RES for m in rx.finditer(text)
             for g in range(1, (m.lastindex or 0) + 1) if m.group(g)]

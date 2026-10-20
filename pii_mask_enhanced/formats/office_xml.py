@@ -6,7 +6,7 @@ import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape as _sax_escape
 
-from ..detection.recognizers.finders.numbers import id_doc_key
+from ..detection.recognizers.entity import id_doc_key
 from ..detection.recognizers.regulars import ID_DOCS, LABELLED_VALUES
 from ..detection.recognizers.validators import KPP_FORMAT
 from ..detection.registry.entity_types import REQUISITE_WORD, requisite_type

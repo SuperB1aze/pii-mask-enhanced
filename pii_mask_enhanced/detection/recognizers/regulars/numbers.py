@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from ...registry.id_documents import DOCS
 from .. import helpers
+from ..entity import CARD_MASK_CHARS
 
 # Номер не обрываем посередине, но продолжение - только группа от 3 цифр:
 # срок "12/27" за картой номером не считается
@@ -18,12 +19,15 @@ CARD_LABEL_RE = re.compile(
 )
 CARD_LENGTHS = range(15, 20)
 # Номер, скрытый частично: "2200 00** **** 1234", "4276XXXXXXXX5679", "**** **** **** 5679"
-CARD_MASK_CHARS = "*•·Xx×"
+_MASK = f"[{re.escape(CARD_MASK_CHARS)}]"
+_MASK_OR_DIGIT = rf"[\d{re.escape(CARD_MASK_CHARS)}]"
+# граница номера: не буква, не цифра и не символ маски
+_NOT_PAN = rf"[\w{re.escape(CARD_MASK_CHARS)}]"
 CARD_MASKED_RE = re.compile(
-    r"(?<![\w*•·×])[\d*•·Xx×]{4}(?:[ -]?[\d*•·Xx×]{2,6}){2,4}(?![\w*•·×])")
-CARD_MASKED_FORM_RE = re.compile(r"(\d{4}|\d{6})?[*•·Xx×]{3,13}\d{4}")
+    rf"(?<!{_NOT_PAN}){_MASK_OR_DIGIT}{{4}}(?:[ -]?{_MASK_OR_DIGIT}{{2,6}}){{2,4}}(?!{_NOT_PAN})")
+CARD_MASKED_FORM_RE = re.compile(rf"(\d{{4}}|\d{{6}})?{_MASK}{{3,13}}\d{{4}}")
 # Последние 4 цифры
-CARD_LAST4_RE = re.compile(r"(?<![\w*•·×])([*•·Xx×]{1,12}[ \t]?\d{4})(?!\d)")
+CARD_LAST4_RE = re.compile(rf"(?<!{_NOT_PAN})({_MASK}{{1,12}}[ \t]?\d{{4}})(?!\d)")
 CARD_BRAND_LAST4_RE = re.compile(
     r"(?<!\w)(?:MIR|Мир|МИР|Visa|VISA|MC|Mastercard|MasterCard|Maestro|UnionPay)"
     r"[ \t]?[-–*•·]+[ \t]?(\d{4})(?!\d)")
@@ -52,7 +56,6 @@ ACCOUNT_CURRENCIES = frozenset({
     "051", "981", "344", "949", "356", "410", "980", "972", "944",
 })
 KADASTR_NUMBER_RE = re.compile(r"(?<![\d:])\d{2}:\d{2}:\d{6,9}:\d+(?![\d:])")
-DATE_RE = re.compile(r"(?<!\d)(?:(?:«(?:0?[1-9]|[12]\d|3[01])»|(?:0?[1-9]|[12]\d|3[01]))\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+\d{4}\s+года|(?:0[1-9]|[12]\d|3[01])\.(?:0[1-9]|1[0-2])\.\d{4})(?!\d)", re.IGNORECASE)
 # подпись прямо перед номером: с ней СНИЛС берем и с неверной суммой
 SNILS_LABEL_RE = re.compile(r"снилс[ \t]*(?:№|:)?[ \t]*\n?[ \t]*$", re.IGNORECASE)
 PASSPORT_RE = re.compile(
@@ -145,6 +148,6 @@ PLATE_LABEL_RE = re.compile(
     r"(?:[ \t]+(?:(?-i:ТС)|автомобил\w*|транспортн\w*[ \t]+средств\w*))?"
     r"[ \t]*(?:№|:)?[ \t]*$", re.IGNORECASE)
 
-# товар рядом: артикул той же формы - не VIN, без подписи его не берем
-VIN_GOODS_CTX_RE = re.compile(r"артикул\w*|арт\.|код\w*[ \t]+товар\w*|SKU|номенклатур\w*",
-                              re.IGNORECASE)
+# артикул товара
+GOODS_CTX_RE = re.compile(r"артикул\w*|арт\.|код\w*[ \t]+товар\w*|SKU|номенклатур\w*",
+                          re.IGNORECASE)

@@ -6,12 +6,9 @@
 """
 import pytest
 
-from pii_mask_enhanced.engine.core import Masker
 from pii_mask_enhanced.formats.office_xml import cell_label_type
 
-
-def _mask(text: str) -> str:
-    return Masker(ner=False).mask(text)[0]
+from masking import mask as _mask, mask_with_preset as _mask_preset
 
 
 @pytest.mark.parametrize("src, expected", [
@@ -63,13 +60,6 @@ def test_income_in_table_cell():
 
 
 # --- остаток по счету и задолженность по кредиту ---
-
-def _mask_preset(text: str, preset: str, types: tuple[str, ...] = ()) -> str:
-    from pii_mask_enhanced.engine.settings import Options, build_masker
-
-    m, _ = build_masker(Options(preset=preset, types=types, ner=False), lambda: None)
-    return m.mask(text)[0]
-
 
 BALANCES = [
     ("остаток по счету 125 430,15 руб.", "остаток по счету {{BALANCE_1}}"),

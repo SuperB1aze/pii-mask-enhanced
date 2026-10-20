@@ -6,13 +6,13 @@ import re
 from ...registry import sources
 from .. import helpers
 from .. import regulars as regs
-from ..entity import Entity
-from .spans import Span, inside
+from ..entity import Entity, from_match, text_key
+from .spans import Span, before, inside
 
 
 def _json_field(text: str, m: re.Match) -> bool:
     """Строка в кавычках - поле JSON: значение после '"ключ":' или сам ключ перед ':'."""
-    return bool(regs.JSON_KEY_BEFORE_RE.search(text, max(0, m.start() - 45), m.start())
+    return bool(regs.JSON_KEY_BEFORE_RE.search(before(text, m.start(), 45))
                 or regs.JSON_KEY_AFTER_RE.match(text, m.end()))
 
 
@@ -48,8 +48,7 @@ def orgs(text: str, org_names: tuple[str, ...]) -> list[Entity]:
                 continue
             named.append(m.span())
             stems.update(_stems(m.group()))
-            out.append(Entity("ORG", m.group(), m.start(), m.end(),
-                              " ".join(m.group().lower().split())))
+            out.append(from_match("ORG", m))
 
     # последним: «Ромашка» внутри 'АО «Ромашка»' не выдаем второй раз
     for m in regs.ORG_QUOTED_NAME_RE.finditer(text):
@@ -57,7 +56,7 @@ def orgs(text: str, org_names: tuple[str, ...]) -> list[Entity]:
         if _json_field(text, m) and regs.LATIN_VALUE_RE.fullmatch(name):
             continue
         if len(name) >= 3 and not inside(m.start(1), m.end(1), [(e.start, e.end) for e in out]):
-            out.append(Entity("ORG", name, m.start(1), m.end(1), name.lower()))
+            out.append(from_match("ORG", m, 1, key=str.lower))
 
     # словарь: сначала название целиком, чтобы "Ромашка Россия" была одной меткой
     for name in org_names:
@@ -65,8 +64,7 @@ def orgs(text: str, org_names: tuple[str, ...]) -> list[Entity]:
             if inside(m.start(), m.end(), named):
                 continue
             named.append(m.span())
-            out.append(Entity("ORG", m.group(), m.start(), m.end(),
-                              " ".join(name.lower().split()), source=sources.DICT))
+            out.append(from_match("ORG", m, key=lambda _: text_key(name), source=sources.DICT))
 
     # потом по словам - для названий, разорванных версткой
     for name in org_names:

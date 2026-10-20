@@ -8,28 +8,25 @@ import phonenumbers
 from ...registry import sources
 from .. import helpers
 from .. import regulars as regs
-from ..entity import Entity, digits
+from ..entity import Entity, digits, from_match
 from .spans import Span, overlaps
 
 
 def profile_nicks(text: str) -> list[Entity]:
-    return [Entity("TG", m.group(1), m.start(1), m.end(1), m.group(1).lower(),
-                   source=sources.PROFILE)
+    return [from_match("TG", m, 1, key=str.lower, source=sources.PROFILE)
             for m in regs.PROFILE_NICK_RE.finditer(text)]
 
 
 def emails(text: str) -> list[Entity]:
     # "https://ivanov:Qwerty123@host" - пароль и хост, а не почта
     creds = [m.span() for m in regs.URL_CREDS_RE.finditer(text)]
-    return [Entity("EMAIL", m.group(), m.start(), m.end(), m.group().lower())
-            for m in regs.EMAIL_RE.finditer(text)
+    return [from_match("EMAIL", m, key=str.lower) for m in regs.EMAIL_RE.finditer(text)
             if not regs.FAKE_EMAIL_RE.match(m.group())
             and not any(overlaps(m.span(), c) for c in creds)]
 
 
 def telegram(text: str) -> list[Entity]:
-    return [Entity("TG", m.group(), m.start(), m.end(), m.group().lower())
-            for m in regs.TG_RE.finditer(text)]
+    return [from_match("TG", m, key=str.lower) for m in regs.TG_RE.finditer(text)]
 
 
 def _host(url: str) -> str:

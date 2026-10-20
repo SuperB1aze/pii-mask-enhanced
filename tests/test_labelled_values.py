@@ -6,14 +6,10 @@
 """
 import pytest
 
-from pii_mask_enhanced.detection import presets
 from pii_mask_enhanced.engine.core import Masker
 from pii_mask_enhanced.formats.office_xml import cell_label_type
 
-
-def _mask(text: str, preset: str | None = None) -> str:
-    types = presets.get(preset).types if preset else Masker().types
-    return Masker(types=tuple(types), ner=False).mask(text)[0]
+from masking import mask as _mask
 
 
 @pytest.mark.parametrize("preset", [None, "accounting"])

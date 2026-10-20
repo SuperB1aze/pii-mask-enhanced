@@ -7,7 +7,7 @@ from collections import Counter
 
 from ...registry import sources
 from .. import regulars as regs
-from ..entity import Entity, digits, text_key
+from ..entity import Entity, as_is, digits, from_match, text_key
 
 
 def _ip_ok(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -39,8 +39,7 @@ def _by_key(etype: str, rx, text: str, key=text_key) -> list[Entity]:
 
 
 def devices(text: str) -> list[Entity]:
-    out = [Entity("DEVICE", m.group(1), m.start(1), m.end(1), digits(m.group(1)),
-                  source=sources.REQUISITE)
+    out = [from_match("DEVICE", m, 1, key=digits, source=sources.REQUISITE)
            for m in regs.IMEI_RE.finditer(text)]
     # SIM, ОС, идентификатор и модель устройства по ключу
     for rx in (regs.SIM_RE, regs.OS_RE, regs.DEVICE_ID_RE, regs.DEVICE_MODEL_RE,
@@ -51,18 +50,15 @@ def devices(text: str) -> list[Entity]:
         # "12-34-56-78-90-12" без единой буквы - скорее номер; с двоеточиями - MAC
         if m.group(1) != ":" and not any(c.isalpha() for c in mac):
             continue
-        out.append(Entity("DEVICE", mac, m.start(), m.end(),
-                          "".join(c for c in mac if c.isalnum()).lower()))
+        out.append(from_match("DEVICE", m,
+                              key=lambda v: "".join(c for c in v if c.isalnum()).lower()))
     return out
 
 
 def sessions(text: str) -> list[Entity]:
-    out = [Entity("SESSION", m.group(), m.start(), m.end(), m.group())
-           for m in regs.JWT_RE.finditer(text)]
-    for rx in (regs.SESSION_RE, regs.BEARER_RE):
-        out += [Entity("SESSION", m.group(1), m.start(1), m.end(1), m.group(1),
-                       source=sources.REQUISITE)
-                for m in rx.finditer(text)]
+    out = [from_match("SESSION", m, key=as_is) for m in regs.JWT_RE.finditer(text)]
+    out += [from_match("SESSION", m, 1, key=as_is, source=sources.REQUISITE)
+            for rx in (regs.SESSION_RE, regs.BEARER_RE) for m in rx.finditer(text)]
     for header in regs.COOKIE_HEADER_RE.finditer(text):
         base = header.start(1)
         for pair in regs.COOKIE_PAIR_RE.finditer(header.group(1)):
@@ -88,12 +84,9 @@ def credentials(text: str) -> list[Entity]:
     out = []
     for rx in (regs.LOGIN_PASSWORD_RE, regs.URL_CREDS_RE):
         for m in rx.finditer(text):
-            out.append(Entity("PERSON_ID", m.group(1), m.start(1), m.end(1), text_key(m.group(1)),
-                              source=sources.REQUISITE))
-            out.append(Entity("SECRET", m.group(2), m.start(2), m.end(2), m.group(2),
-                              source=sources.REQUISITE))
-    out += [Entity("PERSON_ID", m.group(), m.start(), m.end(), text_key(m.group()))
-            for m in regs.DOMAIN_LOGIN_RE.finditer(text)]
+            out.append(from_match("PERSON_ID", m, 1, source=sources.REQUISITE))
+            out.append(from_match("SECRET", m, 2, key=as_is, source=sources.REQUISITE))
+    out += [from_match("PERSON_ID", m) for m in regs.DOMAIN_LOGIN_RE.finditer(text)]
     return out
 
 
@@ -114,15 +107,13 @@ def _looks_random(value: str) -> bool:
 
 def secrets(text: str) -> list[Entity]:
     """Хэши паролей, ключи шифрования, токены сервисов."""
-    out = [Entity("SECRET", m.group(), m.start(), m.end(), m.group())
+    out = [from_match("SECRET", m, key=as_is)
            for rx in (regs.PASSWORD_HASH_RE, regs.API_TOKEN_RE) for m in rx.finditer(text)]
-    out += [Entity("SECRET", m.group(1), m.start(1), m.end(1), m.group(1).lower(),
-                   source=sources.REQUISITE)
+    out += [from_match("SECRET", m, 1, key=str.lower, source=sources.REQUISITE)
             for m in regs.HEX_HASH_RE.finditer(text)]
     for m in regs.NTLM_DUMP_RE.finditer(text):
-        out.append(Entity("PERSON_ID", m.group(1), m.start(1), m.end(1), text_key(m.group(1))))
-        out += [Entity("SECRET", m.group(g), m.start(g), m.end(g), m.group(g).lower())
-                for g in (2, 3)]
+        out.append(from_match("PERSON_ID", m, 1))
+        out += [from_match("SECRET", m, g, key=str.lower) for g in (2, 3)]
     for m in regs.PEM_RE.finditer(text):
         # тело без переводов строки по краям: заголовки остаются на своих строках
         body = m.group(2)
@@ -132,12 +123,10 @@ def secrets(text: str) -> list[Entity]:
             start = m.start(2) + lead
             out.append(Entity("SECRET", value, start, start + len(value), value))
     for m in regs.SSH_KEY_RE.finditer(text):
-        out.append(Entity("SECRET", m.group(1), m.start(1), m.end(1), m.group(1)))
+        out.append(from_match("SECRET", m, 1, key=as_is))
         if m.group(2):
-            out.append(Entity("PERSON_ID", m.group(2), m.start(2), m.end(2),
-                              text_key(m.group(2))))
-    out += [Entity("SECRET", m.group(1), m.start(1), m.end(1), m.group(1),
-                   source=sources.REQUISITE)
+            out.append(from_match("PERSON_ID", m, 2))
+    out += [from_match("SECRET", m, 1, key=as_is, source=sources.REQUISITE)
             for m in regs.SECRET_KEY_RE.finditer(text) if _looks_random(m.group(1))]
     return out
 
