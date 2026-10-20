@@ -38,6 +38,8 @@ VALUES = (
     LabelledValue("полис", "PERSON_ID", POLICY_LABEL, POLICY_NUM),
     LabelledValue("ЭЛН", "PERSON_ID", SICK_LEAVE_LABEL, SICK_LEAVE_NUM),
     LabelledValue("счет депо", "PERSON_ID", DEPO_LABEL, CODE),
+    # серия и номер диплома и аттестата - в registry/id_documents
+    LabelledValue("рег. номер диплома", "IDDOC", EDU_REG_LABEL, CODE),
 
     # карта и секреты
     LabelledValue("держатель карты", "PERSON", CARDHOLDER_LABEL, CARDHOLDER_NAME, needs_sep=True),
