@@ -119,8 +119,7 @@ def _account_structure_ok(num: str) -> bool:
 
 
 def accounts_bare(text: str) -> list[Entity]:
-    """Счет без подписи: балансовый счет и валюта по плану счетов - или ключ по БИК из текста.
-    Ключ только добавляет находки: БИК в тексте может быть другого банка."""
+    # Счет без подписи
     biks_in_text = None
     out = []
     for m in regs.ACCOUNT_BARE_RE.finditer(text):
@@ -190,8 +189,12 @@ def id_documents(text: str) -> list[Entity]:
 def passports(text: str) -> list[Entity]:
     # "паспорт" в 40 знаках перед номером или где угодно в документе про паспорта
     whole_doc = bool(regs.PASSPORT_DOC_CTX_RE.search(text))
-    out = [from_match("PASSPORT", m, key=digits) for m in regs.PASSPORT_RE.finditer(text)
-           if whole_doc or regs.PASSPORT_CTX_RE.search(before(text, m.start(), 40))]
+    out = []
+    for m in regs.PASSPORT_RE.finditer(text):
+        labelled = regs.PASSPORT_CTX_RE.search(before(text, m.start(), 40))
+        if labelled or whole_doc:
+            out.append(from_match("PASSPORT", m, key=digits,
+                                  source=sources.REQUISITE if labelled else ""))
     # слитный номер - только сразу за словом паспорта, даже в документе про паспорта
     out += [from_match("PASSPORT", m, key=as_is, source=sources.REQUISITE)
             for m in regs.PASSPORT_SOLID_RE.finditer(text)

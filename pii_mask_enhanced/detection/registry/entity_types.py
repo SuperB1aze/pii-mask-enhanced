@@ -37,7 +37,7 @@ TYPES = (
     
     EntityType("SNILS", 4, labels=("СНИЛС",), label_check=Validator.snils_ok, spread=True, 
                in_default=True, in_presets=True),
-    EntityType("PASSPORT", 6, in_default=True, in_presets=True),
+    EntityType("PASSPORT", 6, spread=True, in_default=True, in_presets=True),
     EntityType("IDDOC", 6, spread=True, in_default=True, in_presets=True),
     # документ гос. образца по "серия ... №": свидетельство, диплом, аттестат
     EntityType("GOVDOC", 7, spread=True, in_default=True, in_presets=True),

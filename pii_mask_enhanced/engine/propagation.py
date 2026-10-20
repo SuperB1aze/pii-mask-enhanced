@@ -40,6 +40,32 @@ def org_core(value: str) -> str:
     return core if core and " " not in core else ""
 
 
+# Повтор номера ищется по скелету - буквам и цифрам с разделителями между ними
+FLEX_MIN_DIGITS = 6
+_FLEX_SEP_CHARS = " \t.-/№"
+_FLEX_SEP = rf"[{re.escape(_FLEX_SEP_CHARS)}]{{0,3}}"
+
+
+def _skeleton(value: str) -> str | None:
+    # Буквы и цифры номера без разделителей; None - если значение не номер
+    skeleton = re.sub(r"[Нн]омер", "", value).translate({ord(c): None for c in _FLEX_SEP_CHARS})
+    if not skeleton.isalnum() or sum(c.isdigit() for c in skeleton) < FLEX_MIN_DIGITS:
+        return None
+    return skeleton
+
+
+def _flex_repeats(text: str, src: Entity, taken: set[tuple[int, int]]) -> list[Entity]:
+    # Пропускаем только занятое точно тем же спаном
+    pattern = _FLEX_SEP.join(re.escape(c) for c in _skeleton(src.text))
+    out = []
+    for m in re.finditer(rf"(?<!\w){pattern}(?!\w)", text, re.IGNORECASE):
+        if m.span() in taken:
+            continue
+        out.append(Entity(src.type, m.group(), m.start(), m.end(), src.key, source=sources.REPEAT))
+        taken.add(m.span())
+    return out
+
+
 def repeats(text: str, values: set[str], known: list[Entity]) -> list[Entity]:
     # Повторные вхождения уже опознанных значений, которых нет среди находок.
     taken = _spans(known)
@@ -47,10 +73,14 @@ def repeats(text: str, values: set[str], known: list[Entity]) -> list[Entity]:
     for e in known:
         by_value.setdefault(e.text.strip(), e)
     out = []
+    flex_taken = set(taken)
     for value in values:
         if len(value) < 3:
-            continue        # два знака встречаются в тексте случайно
+            continue
         src = by_value[value]
+        if src.type != "DATE" and _skeleton(value):
+            out += _flex_repeats(text, src, flex_taken)
+            continue
         start = 0
         while True:
             at = text.find(value, start)
@@ -61,8 +91,7 @@ def repeats(text: str, values: set[str], known: list[Entity]) -> list[Entity]:
                 continue
             before = text[at - 1] if at else " "
             after = text[start] if start < len(text) else " "
-            # Только целым токеном: иначе номер найдется внутри другого числа.
-            # Исключение - "г" сразу за датой ("01.09.2026г.")
+            # Только целым токеном
             tail_year = (src.type == "DATE" and after in "гГ"
                          and text[start + 1: start + 2] in {".", "", " ", "\n", ","})
             if before.isalnum() or (after.isalnum() and not tail_year):
