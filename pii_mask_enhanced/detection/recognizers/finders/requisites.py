@@ -20,15 +20,16 @@ def docrefs(text: str) -> list[Entity]:
         out.append(from_match("DOCREF", m, 2, key=str.lower, source=sources.DOCREF))
         if m.group(3):
             out.append(from_match("DATE", m, 3, key=as_is, source=sources.DOCREF))
+    # "акт от 01.03.2024 № 15"
+    for m in regs.DOCREF_DATE_FIRST_RE.finditer(text):
+        if any(ch.isdigit() for ch in m.group(2)):
+            out.append(from_match("DATE", m, 1, key=as_is, source=sources.DOCREF))
+            out.append(from_match("DOCREF", m, 2, key=str.lower, source=sources.DOCREF))
     return out
 
 
 def client_docnums(text: str) -> list[Entity]:
-    """Номер с суффиксом типа клиента ("12345/ФЛ") - номер договора и без подписи.
-
-    Суффикс входит в маску: "Договор № 12345 / ФЛ" не оставляет "/ ФЛ" открытым.
-    DOCREF - для наборов, REQ - для маскировки по умолчанию (DOCREF в ней выключен).
-    """
+    # Номер с суффиксом типа клиента ("12345/ФЛ") - номер договора без подписи
     out = []
     for m in regs.DOC_SEGMENTS_RE.finditer(text):
         num = m.group()

@@ -34,8 +34,16 @@ DATE_AFTER_RE = re.compile(rf"[ \t]{{0,3}}от[ \t]{{0,3}}({helpers.DATE})", re.
 DOCREF_RE = re.compile(
     rf"{helpers.DOC_ANCHOR}{helpers.DOC_GAP}"
     r"[ \t]{0,3}(№|N|N°)?[ \t]{0,3}"
-    r"(?<![\w-])([A-Za-zА-Яа-я0-9][A-Za-zА-Яа-я0-9\-/._]{1,30})"
+    rf"(?<![\w-])(?!{helpers.DATE}(?![\w/-]))"
+    r"([A-Za-zА-Яа-я0-9][A-Za-zА-Яа-я0-9\-/._]{1,30})"
     rf"(?:[ \t]{{1,3}}от[ \t]{{1,3}}({helpers.DATE}))?",
+    re.IGNORECASE,
+)
+# обратный порядок: "акт от 01.03.2024 № 15", "Договор от 25.01.2023 № 12/24"; "№" обязателен
+DOCREF_DATE_FIRST_RE = re.compile(
+    rf"{helpers.DOC_ANCHOR}{helpers.DOC_GAP}[ \t]{{1,3}}от[ \t]{{1,3}}({helpers.DATE})"
+    r"[ \t]{0,3}(?:г\.|года)?[ \t]{0,3}(?:№|N|N°)[ \t]{0,3}"
+    r"([A-Za-zА-Яа-я0-9][A-Za-zА-Яа-я0-9\-/._]{0,30})",
     re.IGNORECASE,
 )
 

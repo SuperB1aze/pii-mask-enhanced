@@ -211,3 +211,21 @@ def test_dbo_and_suffix_masked_by_default():
     """Без набора DOCREF выключен - номер ДБО все равно скрывается, как общий REQ."""
     out = Masker(ner=False).mask("ДБО № 11111 от 01.02.2020, номер 22222/ФЛ")[0]
     assert "11111" not in out and "22222/ФЛ" not in out
+
+
+@pytest.mark.parametrize("src", [
+    "остаток денежных средств на расчетном счете на 01.03.2024 составил",
+    "выписка по счету на 01.03.2024",
+])
+def test_date_after_account_word_is_not_a_docref(src):
+    """"счет ... на 01.03.2024" - дата остатка или выписки, а не номер документа "Счет"."""
+    assert "{{DOCREF" not in _mask(src)
+
+
+@pytest.mark.parametrize("src, expected", [
+    ("акт от 01.03.2024 № 15", "акт от {{DATE_1}} № {{DOCREF_1}}"),
+    ("Договор от 25.01.2023 № 12/24", "Договор от {{DATE_1}} № {{DOCREF_1}}"),
+    ("договор от 25.01.2023 г. № 12/24", "договор от {{DATE_1}} г. № {{DOCREF_1}}"),
+])
+def test_docref_with_date_before_number(src, expected):
+    assert _mask(src) == expected
