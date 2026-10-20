@@ -64,10 +64,17 @@ def test_reads_shared_and_inline_strings(tmp_path):
     assert xlsx.cell_texts(src) == ["ООО «Ромашка»", "Контрагент", "Петров Иван"]
 
 
-def test_numbers_are_not_text(tmp_path):
-    """Числа и даты живут отдельным типом ячейки - маскировать их нечего."""
+def test_numbers_are_read_and_plain_ones_stay_numbers(tmp_path):
+    """Число - тоже значение книги: ИНН и СНИЛС, набранные без пробелов, Excel хранит
+    числом. Число без ПД (количество, сумма в счете) остается числовой ячейкой."""
+    from pii_mask_enhanced.engine.core import Masker
+
     src = _book(tmp_path, shared=["Доход"], numbers=["1000", "45678"])
-    assert xlsx.cell_texts(src) == ["Доход"]
+    assert xlsx.cell_texts(src) == ["Доход", "1000", "45678"]
+    dst = tmp_path / "out.xlsx"
+    xlsx.mask_workbook(src, dst, Masker(ner=False))
+    sheet = zipfile.ZipFile(dst).read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert '<c r="C1"><v>1000</v></c>' in sheet
 
 
 def test_rewrite_replaces_text_and_keeps_workbook_valid(tmp_path):
@@ -426,3 +433,92 @@ def test_comment_persons_are_cleared(tmp_path):
                       "xl/persons/person.xml")
     assert "Соколова" not in body and "sokolova" not in body
     assert 'id="{2}"' in body
+
+
+# --- числовые ячейки и подпись в шапке колонки ---
+
+def _raw_sheet_book(path, shared: list[str], rows: dict[int, str]):
+    """Книга с "сырыми" ячейками листа: числа, формулы с кэшем, t="str", пустые."""
+    sst = ('<?xml version="1.0"?><sst>'
+           + "".join(f"<si><t>{text}</t></si>" for text in shared) + "</sst>")
+    sheet = ('<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/'
+             'spreadsheetml/2006/main"><sheetData>'
+             + "".join(f'<row r="{r}">{c}</row>' for r, c in sorted(rows.items()))
+             + "</sheetData></worksheet>")
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", CONTENT_TYPES)
+        z.writestr("xl/sharedStrings.xml", sst)
+        z.writestr("xl/worksheets/sheet1.xml", sheet)
+    return path
+
+
+def _mask_sheet(tmp_path, shared, rows) -> str:
+    from pii_mask_enhanced.engine.core import Masker
+
+    src = _raw_sheet_book(tmp_path / "in.xlsx", shared, rows)
+    dst = tmp_path / "out.xlsx"
+    xlsx.mask_workbook(src, dst, Masker(ner=False))
+    return zipfile.ZipFile(dst).read("xl/worksheets/sheet1.xml").decode("utf-8")
+
+
+def test_number_cell_with_pii_becomes_text_label(tmp_path):
+    """ИНН и СНИЛС, сохраненные числом, раньше уходили открытыми. Стиль остается.
+    ИНН узнается по контрольной сумме, слитный СНИЛС - по подписи в шапке колонки
+    (без подписи 11 цифр - и телефон)."""
+    sheet = _mask_sheet(tmp_path, ["СНИЛС"], {
+        1: '<c r="B1" t="s"><v>0</v></c>',
+        2: '<c r="A2" s="3"><v>7707083893</v></c><c r="B2" t="n"><v>11223344595</v></c>'})
+    assert "7707083893" not in sheet and "11223344595" not in sheet
+    assert '<c r="A2" s="3" t="inlineStr"><is><t xml:space="preserve">{{INN_1}}</t></is></c>' in sheet
+    assert "{{SNILS_1}}" in sheet
+
+
+def test_formula_cached_value_with_pii_is_masked(tmp_path):
+    """В кэше формулы "=F3" - копия ИНН: формулу убираем, иначе кэш выдал бы исходник.
+    Формула без ПД ("=SUM") остается формулой."""
+    sheet = _mask_sheet(tmp_path, [], {
+        1: '<c r="A1"><f>F3</f><v>7707083893</v></c><c r="B1"><f>SUM(C1:C9)</f><v>42</v></c>',
+        2: '<c r="A2" t="str"><f>CONCATENATE(X1)</f><v>ivanov@mail.ru</v></c>'})
+    assert "7707083893" not in sheet and "<f>F3</f>" not in sheet
+    assert "<f>SUM(C1:C9)</f><v>42</v>" in sheet
+    assert "ivanov@mail.ru" not in sheet and "user1@example.com" in sheet
+
+
+def test_empty_cells_do_not_swallow_neighbours(tmp_path):
+    """Пустая ячейка "<c r=... />" значения не имеет: соседнее число за ней не захватываем."""
+    sheet = _mask_sheet(tmp_path, [], {
+        1: '<c r="A1" s="1"/><c r="B1"><v>7707083893</v></c><c r="C1" s="2"/>'})
+    assert '<c r="A1" s="1"/>' in sheet and '<c r="C1" s="2"/>' in sheet
+    assert "{{INN_1}}" in sheet
+
+
+def test_column_header_labels_every_row(tmp_path):
+    """Подпись в шапке колонки, значения - во всех строках под ней, а не только в первой.
+    Колонка без подписи ("Кол-во") остается числами."""
+    shared = ["Табельный номер", "Оклад", "Кол-во", "Пол", "жен.", "муж."]
+    rows = {1: '<c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c>'
+               '<c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c>'}
+    for r, (tab, pay, qty, sex) in enumerate([("00123", "120000", "3", 4),
+                                              ("124", "95000", "5", 5),
+                                              ("125", "80000.5", "7", 4)], start=2):
+        rows[r] = (f'<c r="A{r}"><v>{tab}</v></c><c r="B{r}"><v>{pay}</v></c>'
+                   f'<c r="C{r}"><v>{qty}</v></c><c r="D{r}" t="s"><v>{sex}</v></c>')
+    sheet = _mask_sheet(tmp_path, shared, rows)
+    for leaked in ("00123", ">124<", ">125<", "120000", "95000", "80000.5"):
+        assert leaked not in sheet, f"значение под шапкой утекло: {leaked}"
+    for qty in ("<v>3</v>", "<v>5</v>", "<v>7</v>"):
+        assert qty in sheet
+    sst = zipfile.ZipFile(tmp_path / "out.xlsx").read("xl/sharedStrings.xml").decode("utf-8")
+    assert "жен." not in sst and "муж." not in sst
+
+
+def test_column_header_labelled_numbers(tmp_path):
+    shared = ["Табельный номер", "Иванов"]
+    path = _raw_sheet_book(tmp_path / "h.xlsx", shared, {
+        1: '<c r="A1" t="s"><v>0</v></c>',
+        2: '<c r="A2"><v>123</v></c>',
+        3: '<c r="A3"><v>124</v></c>',
+        40: '<c r="A40"><v>777</v></c>'})
+    labelled = xlsx.labelled_numbers(path)
+    assert {"123", "124", "777"} <= set(labelled)
+    assert labelled["777"][0] == "PERSON_ID"

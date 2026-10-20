@@ -1,12 +1,13 @@
 """Маскировка книги Excel (.xlsx) без внешних зависимостей."""
 from __future__ import annotations
 
+import bisect
 import re
 import zipfile
 from pathlib import Path
-from .office_xml import (T_RE, cell_label, clear_attrs, counterparty_words,
-                         escape, mask_values, runs_text, tag, unknown_text_parts, unescape,
-                         write_copy)
+
+from .office_xml import (T_RE, cell_label, clear_attrs, counterparty_words, escape, is_label,
+                         mask_values, runs_text, tag, unknown_text_parts, unescape, write_copy)
 
 # Контейнеры текстовых узлов <t>: ячейка общей таблицы, ячейка листа, комментарий.
 # Автор комментария хранится отдельным узлом, без <t>.
@@ -14,6 +15,10 @@ _ITEM_RE = {k: re.compile(tag(k), re.S) for k in ("si", "is", "text", "author")}
 # Колонтитул печати листа и текст цепочки примечаний - строкой, без <t>.
 _ITEM_RE["hf"] = re.compile(tag("(?:odd|even|first)(?:Header|Footer)"), re.S)
 _ITEM_RE["tc"] = _ITEM_RE["text"]
+_ITEM_RE["num"] = re.compile(
+    rb'<c\s+(?![^>]*\bt="(?:s|inlineStr|b|e)")([^>]*?)(?<!/)>'
+    rb'((?:(?!</c>|<c[\s>]).)*?)<(?:\w+:)?v>([^<]*)</(?:\w+:)?v>((?:(?!</c>|<c[\s>]).)*?)</c>',
+    re.S)
 _PLAIN = {"author", "hf", "tc"}
 
 # Коды колонтитула: &L &C &R (часть), &P &N &D (поля), &"Шрифт,Жирный", &12, &KFF0000.
@@ -24,6 +29,7 @@ _HF_CODE_RE = re.compile(r'(&(?:"[^"]*"|\d+|K[0-9A-Fa-f]{6}|K\d\d[+-]\d{3}|.))',
 _PART_KINDS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"^xl/sharedStrings\.xml$"), "si"),
     (re.compile(r"^xl/worksheets/[^/]+\.xml$"), "is"),
+    (re.compile(r"^xl/worksheets/[^/]+\.xml$"), "num"),
     (re.compile(r"^xl/worksheets/[^/]+\.xml$"), "hf"),
     (re.compile(r"^xl/comments\d*\.xml$"), "author"),
     (re.compile(r"^xl/comments\d*\.xml$"), "text"),
@@ -69,17 +75,43 @@ def _item_values(body: bytes, kind: str) -> list[str]:
     return _HF_CODE_RE.split(value)[0::2] if kind == "hf" else [value]
 
 
+def _num_value(match: re.Match) -> str:
+    return unescape(match.group(3).decode("utf-8"))
+
+
 def cell_texts(path: str | Path) -> list[str]:
     """Весь текст книги, который мы умеем обезличивать, в устойчивом порядке."""
     values: list[str] = []
     with zipfile.ZipFile(path) as z:
         for name, kind in _parts(z):
             for item in _ITEM_RE[kind].finditer(z.read(name)):
-                values.extend(_item_values(item.group(1), kind))
+                if kind == "num":
+                    values.append(_num_value(item))
+                else:
+                    values.extend(_item_values(item.group(1), kind))
     return values
 
 
+def _rewrite_num_cell(match: re.Match, new: str) -> bytes:
+    """Число или результат формулы с найденными ПД - текстовой ячейкой с меткой.
+    Формулу убираем: в ее кэше осталось бы исходное значение. Стиль и адрес - как были."""
+    attrs = re.sub(rb'\s*\bt="[^"]*"', b"", match.group(1))
+    payload = escape(new).encode("utf-8")
+    return (b"<c " + attrs.strip() + b' t="inlineStr"><is><t xml:space="preserve">'
+            + payload + b"</t></is></c>")
+
+
 def _rewrite_part(blob: bytes, kind: str, values: list[str], cursor: int) -> tuple[bytes, int]:
+    def one_num(match: re.Match) -> bytes:
+        nonlocal cursor
+        new, cursor = values[cursor], cursor + 1
+        if new == _num_value(match):
+            return match.group(0)    # ничего не нашлось - число и формула целы
+        return _rewrite_num_cell(match, new)
+
+    if kind == "num":
+        return _ITEM_RE["num"].sub(one_num, blob), cursor
+
     def one(match: re.Match) -> bytes:
         nonlocal cursor
         body = match.group(1)
@@ -151,7 +183,7 @@ def supported_names(src: str | Path) -> frozenset[str]:
 
 
 # Ячейка листа с координатой: ссылка в общую таблицу (t="s"), текст в листе
-# (t="inlineStr") или число - числа пропускаем.
+# (t="inlineStr"), число или результат формулы.
 _CELL_RE = re.compile(
     rb'<c\s+r="([A-Z]+)(\d+)"([^>]*?)(?:/>|>(.*?)</c>)', re.S)
 _V_RE = re.compile(rb"<(?:\w+:)?v>(.*?)</(?:\w+:)?v>", re.S)
@@ -165,7 +197,7 @@ def _col_num(letters: bytes) -> int:
 
 
 def _sheet_grid(z: zipfile.ZipFile, name: str, shared: list[str]) -> dict[tuple[int, int], str]:
-    """Текстовые значения листа по координатам (строка, колонка)."""
+    """Значения листа по координатам (строка, колонка): текст и числа."""
     grid: dict[tuple[int, int], str] = {}
     for m in _CELL_RE.finditer(z.read(name)):
         col, row, attrs, body = _col_num(m.group(1)), int(m.group(2)), m.group(3), m.group(4)
@@ -179,11 +211,33 @@ def _sheet_grid(z: zipfile.ZipFile, name: str, shared: list[str]) -> dict[tuple[
                     grid[(row, col)] = shared[idx]
         elif b't="inlineStr"' in attrs:
             grid[(row, col)] = _item_value(body, "is")
+        elif not re.search(rb'\bt="(?:b|e)"', attrs):
+            # число и строка-результат формулы: табельный "124", оклад "95000"
+            v = _V_RE.search(body)
+            if v is not None:
+                grid[(row, col)] = unescape(v.group(1).decode("utf-8"))
     return grid
 
 
+def _column_headers(grid: dict[tuple[int, int], str]) -> dict[int, list[tuple[int, str]]]:
+    """Подписи из реестра по колонкам, сверху вниз: шапка таблицы и шапки ниже по листу."""
+    heads: dict[int, list[tuple[int, str]]] = {}
+    for (row, col), text in sorted(grid.items()):
+        if is_label(text):
+            heads.setdefault(col, []).append((row, text))
+    return heads
+
+
+def _header_above(heads: list[tuple[int, str]], row: int) -> str:
+    # ближайшая подпись выше по колонке: значения идут сотнями строк под шапкой
+    rows = [r for r, _ in heads]
+    i = bisect.bisect_left(rows, row)
+    return heads[i - 1][1] if i else ""
+
+
 def labelled_numbers(src: str | Path) -> dict[str, tuple[str, str]]:
-    # значения, их тип и ключ по подписи слева или сверху ("A9=ИНН", "B9=6083778353").
+    """Значения, их тип и ключ по подписи: слева ("A9=ИНН", "B9=6083778353") или в шапке
+    колонки - тогда под ней значения всех строк, а не только первой."""
     out: dict[str, tuple[str, str]] = {}
     with zipfile.ZipFile(src) as z:
         shared = []
@@ -192,8 +246,10 @@ def labelled_numbers(src: str | Path) -> dict[str, tuple[str, str]]:
             shared = [_item_value(i.group(1), "si") for i in _ITEM_RE["si"].finditer(blob)]
         for name in (n for n in z.namelist() if re.match(r"^xl/worksheets/[^/]+\.xml$", n)):
             grid = _sheet_grid(z, name, shared)
+            heads = _column_headers(grid)
             for (row, col), value in grid.items():
-                for label in (grid.get((row, col - 1), ""), grid.get((row - 1, col), "")):
+                header = _header_above(heads.get(col, []), row)
+                for label in (grid.get((row, col - 1), ""), header):
                     hit = cell_label(label, value)
                     if hit:
                         out[value.strip()] = hit

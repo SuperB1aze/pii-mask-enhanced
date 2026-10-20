@@ -140,6 +140,16 @@ def cell_label(label: str, value: str) -> tuple[str, str] | None:
     return None
 
 
+def is_label(text: str) -> bool:
+    """подпись из реестра"""
+    text = text.strip()
+    if not text:
+        return False
+    return (any(lv.cell_label.match(text) for lv in LABELLED_VALUES)
+            or any(doc.context and doc.context.fullmatch(text) for doc in ID_DOCS)
+            or bool(REQ_LABEL_RE.match(text)))
+
+
 def cell_label_type(label: str, value: str) -> str | None:
     """Только тип из cell_label."""
     hit = cell_label(label, value)
