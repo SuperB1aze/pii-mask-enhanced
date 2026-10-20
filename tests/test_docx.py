@@ -298,3 +298,60 @@ def test_strict_inn_masks_labelled_table_cell(tmp_path):
     out = docx.paragraph_texts(dst)
     assert "6083778353" not in out, "ИНН рядом с подписью утек"
     assert "1063391630" in out, "одинокий номер без подписи маскировать не надо"
+
+
+# --- таблица Word: подпись в шапке колонки ---
+
+def _table(rows: list[list[str]], spans: dict[tuple[int, int], int] | None = None) -> str:
+    """Таблица Word из текста ячеек; spans - объединение по ширине: (строка, ячейка) -> n."""
+    out = []
+    for r, row in enumerate(rows):
+        cells = []
+        for c, text in enumerate(row):
+            props = f'<w:tcPr><w:gridSpan w:val="{spans[(r, c)]}"/></w:tcPr>' if spans and (r, c) in spans else ""
+            cells.append(f"<w:tc>{props}{_para([text]) if text else '<w:p/>'}</w:tc>")
+        out.append("<w:tr>" + "".join(cells) + "</w:tr>")
+    return "<w:tbl>" + "".join(out) + "</w:tbl>"
+
+
+def _masked_texts(tmp_path, body: list[str]) -> list[str]:
+    from pii_mask_enhanced.engine.core import Masker
+
+    src = _docx(tmp_path / "t.docx", body)
+    dst = tmp_path / "t_out.docx"
+    docx.mask_document(src, dst, Masker(ner=False))
+    return docx.paragraph_texts(dst)
+
+
+def test_table_header_labels_every_row(tmp_path):
+    """Шапка "Табельный номер" / "Оклад" / "Пол" - значения во всех строках под ней, а не
+    только в первой. Колонка без подписи ("Кол-во") остается как есть."""
+    rows = [["ФИО", "Табельный номер", "Оклад", "Кол-во", "Пол"],
+            ["Иванов И.И.", "00123", "120000", "3", "жен."],
+            ["Петров П.П.", "124", "95000", "5", "муж."],
+            ["Сидоров С.С.", "125", "80000", "7", "м"]]
+    out = _masked_texts(tmp_path, [_table(rows)])
+    for leaked in ("00123", "124", "125", "120000", "95000", "80000", "жен.", "муж.", "м"):
+        assert leaked not in out, f"значение под шапкой утекло: {leaked}"
+    assert {"3", "5", "7", "Табельный номер", "Оклад", "Кол-во"} <= set(out)
+
+
+def test_table_header_with_merged_cell(tmp_path):
+    """Объединенная по ширине ячейка сдвигает колонки: "Оклад" стоит над третьей колонкой."""
+    rows = [["Сотрудник", "Оклад"],
+            ["Иванов И.И.", "120000"]]
+    out = _masked_texts(tmp_path, [_table(rows, spans={(0, 0): 2, (1, 0): 2})])
+    assert "120000" not in out
+
+
+def test_table_labels_in_nested_table(tmp_path):
+    inner = _table([["СНИЛС"], ["11223344595"], ["12345678964"]])
+    outer = f"<w:tbl><w:tr><w:tc>{_para(['Данные'])}{inner}{_para([''])}</w:tc></w:tr></w:tbl>"
+    out = _masked_texts(tmp_path, [outer])
+    assert "11223344595" not in out and "12345678964" not in out
+
+
+def test_table_labels_scan(tmp_path):
+    src = _docx(tmp_path / "s.docx", [_table([["Табельный номер"], ["123"], ["124"]])])
+    labelled = docx.table_labels(src)
+    assert labelled["123"][0] == "PERSON_ID" and labelled["124"][0] == "PERSON_ID"

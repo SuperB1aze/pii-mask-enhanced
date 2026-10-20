@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import re
 import zipfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, NamedTuple
 
-from .office_xml import (clear_attrs, counterparty_words, escape, mask_values,
-                         numbers_after_labels, unescape, unknown_text_parts, write_copy)
+from .office_xml import (cell_label, clear_attrs, counterparty_words, escape, is_label,
+                         mask_values, numbers_after_labels, unescape, unknown_text_parts,
+                         write_copy)
 
 _TOKEN_RE = re.compile(
     # узел с текстом: видимый текст, удаленный при рецензировании, код поля
@@ -63,10 +65,6 @@ def _attr(m: re.Match, group: str) -> _Node:
 
 def _text_units(blob: bytes) -> list[list[_Node]]:
     """Единицы маскировки части с абзацами: узлы, текст которых читается одной строкой.
-
-    У каждого абзаца единица его видимого текста есть всегда, даже пустая.
-    Удаленный текст и коды полей - отдельные единицы следом. Абзац надписи вложен
-    во внешний, и его узлы к внешнему не относятся.
     """
     paragraphs: list[list[list[_Node]]] = []
     stack: list[tuple[list[list[_Node]], dict[bytes, list[_Node]]]] = []
@@ -113,6 +111,130 @@ def _rels_units(blob: bytes) -> list[list[_Node]]:
 
 
 _UNITS: dict[str, Callable[[bytes], list[list[_Node]]]] = {"text": _text_units, "rels": _rels_units}
+
+
+# Таблица Word: строки, ячейки (с объединением по ширине - gridSpan), абзацы и их текст.
+_TABLE_TOKEN_RE = re.compile(
+    rb"<(?P<close>/)?(?:\w+:)?(?P<tag>tbl|tr|tc|p)(?:\s[^>]*)?(?P<self>/)?>"
+    rb"|<(?:\w+:)?gridSpan\s[^>]*?(?:\w+:)?val=[\"'](?P<span>\d+)[\"']"
+    rb"|<(?:\w+:)?t(?:\s[^>]*)?(?<!/)>(?P<text>.*?)</(?:\w+:)?t>",
+    re.S)
+
+# ячейка таблицы: (строка, колонка)
+_Grid = dict[tuple[int, int], list[str]]
+
+
+@dataclass
+class _Table:
+    """Разбираемая таблица: где мы сейчас и что уже собрано."""
+    grid: _Grid = field(default_factory=dict)
+    row: int = -1
+    col: int = 0
+    cell: list[str] | None = None       # абзацы открытой ячейки
+    span: int = 1                       # ширина открытой ячейки в колонках
+    para: list[bytes] | None = None     # куски текста открытого абзаца
+
+    def open_row(self) -> None:
+        self.row, self.col = self.row + 1, 0
+
+    def open_cell(self) -> None:
+        self.cell, self.span = [], 1
+
+    def close_cell(self) -> None:
+        if self.cell is not None:
+            self.grid[(self.row, self.col)] = self.cell
+            self.col += self.span
+            self.cell = None
+
+    def set_span(self, span: int) -> None:
+        if self.cell is not None:
+            self.span = span
+
+    def open_para(self) -> None:
+        if self.cell is not None:
+            self.para = []
+
+    def close_para(self) -> None:
+        if self.cell is not None and self.para is not None:
+            self.cell.append(unescape(b"".join(self.para).decode("utf-8")))
+        self.para = None
+
+    def empty_para(self) -> None:
+        # "<w:p/>": абзац без текста - тоже место в ячейке
+        if self.cell is not None:
+            self.cell.append("")
+
+    def add_text(self, raw: bytes) -> None:
+        if self.para is not None:
+            self.para.append(raw)
+
+
+# тег и закрывающий ли он -> что сделать с таблицей; закрытие строки ничего не меняет
+_TABLE_EVENTS: dict[tuple[bytes, bool], Callable[[_Table], None]] = {
+    (b"tr", False): _Table.open_row,
+    (b"tc", False): _Table.open_cell,
+    (b"tc", True): _Table.close_cell,
+    (b"p", False): _Table.open_para,
+    (b"p", True): _Table.close_para,
+}
+
+
+def _tables(blob: bytes) -> list[_Grid]:
+    """Таблицы части, вложенные - отдельно: координаты ячеек и тексты абзацев."""
+    done: list[_Grid] = []
+    stack: list[_Table] = []
+    for m in _TABLE_TOKEN_RE.finditer(blob):
+        tag, closing, empty = m.group("tag"), bool(m.group("close")), bool(m.group("self"))
+        if tag == b"tbl":
+            if closing:
+                done.append(stack.pop().grid)
+            elif not empty:
+                stack.append(_Table())
+            continue
+        if not stack:
+            continue        # абзац и текст вне таблицы
+        table = stack[-1]
+        if m.group("span"):
+            table.set_span(int(m.group("span")))
+        elif m.group("text") is not None:
+            table.add_text(m.group("text"))
+        elif tag == b"p" and empty:
+            table.empty_para()
+        elif (tag, closing) in _TABLE_EVENTS:
+            _TABLE_EVENTS[(tag, closing)](table)
+    return done
+
+
+def _header_above(grid: _Grid, row: int, col: int) -> str:
+    # ближайшая подпись выше по колонке
+    for r in range(row - 1, -1, -1):
+        text = " ".join(grid.get((r, col), [])).strip()
+        if text and is_label(text):
+            return text
+    return ""
+
+
+def table_labels(path: str | Path) -> dict[str, tuple[str, str]]:
+    """Значения ячеек таблиц Word по подписи"""
+    out: dict[str, tuple[str, str]] = {}
+    with zipfile.ZipFile(path) as z:
+        for name, kind in _parts(z):
+            if kind != "text":
+                continue
+            for grid in _tables(z.read(name)):
+                for (row, col), paras in grid.items():
+                    left = next((" ".join(grid[(row, c)]) for c in range(col - 1, -1, -1)
+                                 if (row, c) in grid), "")
+                    header = _header_above(grid, row, col)
+                    for value in paras:
+                        if not value.strip():
+                            continue
+                        for label in (left, header):
+                            hit = cell_label(label, value)
+                            if hit:
+                                out[value.strip()] = hit
+                                break
+    return out
 
 
 def _parts(z: zipfile.ZipFile) -> list[tuple[str, str]]:
@@ -193,7 +315,9 @@ def mask_document(src: str | Path, dst: str | Path, masker, mapping: dict | None
         raise ValueError(f"В документе есть текст, с которым возникла проблема обезличивания: {unknown}, может произойти утечка ПД.")
 
     values = paragraph_texts(src)
-    masker = masker.with_hints(counterparty_words(values), numbers_after_labels(values))
+    # подпись в предыдущем абзаце и в таблице: слева или в шапке колонки
+    labelled = {**numbers_after_labels(values), **table_labels(src)}
+    masker = masker.with_hints(counterparty_words(values), labelled)
     masked, mapping = mask_values(values, masker, mapping)
     rewrite(src, dst, masked)
     return mapping
