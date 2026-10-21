@@ -88,7 +88,7 @@ pii-mask unmask summary.md --mapping встреча.mapping.json -o summary.fina
 
 | Вход | Результат |
 |---|---|
-| текст (`.md`, `.txt` и т.п., или `-` для stdin) | `.masked.md` |
+| текст (`.md`, `.txt`, `.csv`, `.log` и т.п.) | `.masked` + то же расширение (`клиенты.csv` -> `клиенты.masked.csv`); без расширения - `.masked.md`, для `-` (stdin) - stdout |
 | `.docx` | `.masked.docx` - оформление сохраняется |
 | `.doc` | `.masked.docx` - через временную конвертацию в `.docx` (нужен конвертер, см. «Установка») |
 | `.xlsx` | `.masked.xlsx` |

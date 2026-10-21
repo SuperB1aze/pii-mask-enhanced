@@ -31,7 +31,7 @@ class CMD:
                 return CMD.mask_legacy_doc(args, src_path)
 
             stem = src_path.with_suffix("") if src_path else None
-            suffix = ".masked.xlsx" if kind == ".xlsx" else ".masked.docx" if kind == ".docx" else ".masked.md"
+            suffix = ".masked" + (".md" if kind in ("", ".pdf") else src_path.suffix)
             out = args.output or (f"{stem}{suffix}" if stem else None)
             mapping_path = args.mapping or f"{stem}.mapping.json"
             CMD._check_paths((out, mapping_path, "результат и реестр"),

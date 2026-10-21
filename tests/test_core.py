@@ -157,3 +157,27 @@ def test_fake_phone_survives_ten_thousand_labels():
     fake = make_placeholder("PHONE", 12345)
     assert fake == "+7 000 001-23-45"
     assert is_own_artifact(fake)
+
+
+@pytest.mark.parametrize("name, expected", [
+    ("клиенты.csv", "клиенты.masked.csv"),
+    ("access.log", "access.masked.log"),
+    ("записка.txt", "записка.masked.txt"),
+    ("встреча.md", "встреча.masked.md"),
+    ("заметка", "заметка.masked.md"),
+])
+def test_cli_text_mask_keeps_extension(tmp_path, name, expected):
+    import sys
+
+    from pii_mask_enhanced.interfaces.cli.cli import main
+
+    src = tmp_path / name
+    src.write_text("Телефон +7 916 555-12-34", encoding="utf-8")
+    old, sys.argv = sys.argv, ["pii-mask", "mask", str(src), "--no-ner"]
+    try:
+        with pytest.raises(SystemExit) as exc:
+            main()
+    finally:
+        sys.argv = old
+    assert exc.value.code == 0
+    assert "+7 000 000-00-01" in (tmp_path / expected).read_text(encoding="utf-8")

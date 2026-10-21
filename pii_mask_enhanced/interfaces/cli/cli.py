@@ -21,7 +21,8 @@ def main() -> None:
 
     p = sub.add_parser("mask", help="замаскировать файл или stdin (-)")
     p.add_argument("file")
-    p.add_argument("-o", "--output", help="куда писать masked (дефолт <stem>.masked.md, для stdin - stdout)")
+    p.add_argument("-o", "--output", help="куда писать masked (дефолт <stem>.masked.<расширение исходника>, "
+                        "для .pdf и файла без расширения - .masked.md, для stdin - stdout)")
     p.add_argument("--mapping", help="файл mapping (дефолт <stem>.mapping.json; существующий продолжается)")
     p.add_argument("--audit", action="store_true", help="второй проход локальной LLM (Ollama)")
     p.add_argument("--no-ner", action="store_true", help="без Natasha NER (только форматные ПД)")
