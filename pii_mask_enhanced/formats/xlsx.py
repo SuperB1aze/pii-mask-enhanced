@@ -7,7 +7,8 @@ import zipfile
 from pathlib import Path
 
 from .office_xml import (T_RE, cell_label, clear_attrs, counterparty_words, escape, is_label,
-                         mask_values, runs_text, tag, unknown_text_parts, unescape, write_copy)
+                         mask_values, runs_text, tag, unknown_text_parts, unescape,
+                         unmask_values, write_copy)
 
 # Контейнеры текстовых узлов <t>: ячейка общей таблицы, ячейка листа, комментарий.
 # Автор комментария хранится отдельным узлом, без <t>.
@@ -79,17 +80,22 @@ def _num_value(match: re.Match) -> str:
     return unescape(match.group(3).decode("utf-8"))
 
 
-def cell_texts(path: str | Path) -> list[str]:
-    """Весь текст книги, который мы умеем обезличивать, в устойчивом порядке."""
-    values: list[str] = []
+def _kinds_and_values(path: str | Path) -> list[tuple[str, str]]:
+    """Значения книги в порядке cell_texts вместе с видом контейнера."""
+    out: list[tuple[str, str]] = []
     with zipfile.ZipFile(path) as z:
         for name, kind in _parts(z):
             for item in _ITEM_RE[kind].finditer(z.read(name)):
                 if kind == "num":
-                    values.append(_num_value(item))
+                    out.append((kind, _num_value(item)))
                 else:
-                    values.extend(_item_values(item.group(1), kind))
-    return values
+                    out.extend((kind, v) for v in _item_values(item.group(1), kind))
+    return out
+
+
+def cell_texts(path: str | Path) -> list[str]:
+    """Весь текст книги, который мы умеем обезличивать, в устойчивом порядке."""
+    return [value for _, value in _kinds_and_values(path)]
 
 
 def _rewrite_num_cell(match: re.Match, new: str) -> bytes:
@@ -264,8 +270,46 @@ def mask_workbook(src: str | Path, dst: str | Path, masker, mapping: dict | None
     if unknown:
         raise ValueError(f"В книге есть текст, с которым возникла проблема обезличивания: {unknown}, может произойти утечка ПД.")
 
-    values = cell_texts(src)
+    pairs = _kinds_and_values(src)
+    values = [value for _, value in pairs]
     masker = masker.with_hints(counterparty_words(values), labelled_numbers(src))
     masked, mapping = mask_values(values, masker, mapping)
+    # Числовая ячейка с ПД становится текстовой
+    for (kind, old), new in zip(pairs, masked):
+        if kind == "num" and new != old and new in mapping["labels"]:
+            mapping["labels"][new]["number"] = True
     rewrite(src, dst, masked)
     return mapping
+
+
+_MASKED_NUM_RE = re.compile(
+    rb'<c ([^>]*?) t="inlineStr"><is><t xml:space="preserve">([^<]*)</t></is></c>')
+_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+_SHEET_RE = re.compile(r"^xl/worksheets/[^/]+\.xml$")
+
+
+def _restore_numbers(blob: bytes, labels: dict) -> bytes:
+    def one(m: re.Match) -> bytes:
+        rec = labels.get(unescape(m.group(2).decode("utf-8")))
+        if not rec or not rec.get("number") or not _NUMBER_RE.fullmatch(rec["original"]):
+            return m.group(0)
+        return b"<c " + m.group(1) + b"><v>" + rec["original"].encode("utf-8") + b"</v></c>"
+
+    return _MASKED_NUM_RE.sub(one, blob)
+
+
+def unmask_workbook(src: str | Path, dst: str | Path, mapping: dict) -> None:
+    """Вернуть оригиналы в книгу; ячейка, бывшая числом до маскировки, снова число."""
+    src, dst = Path(src), Path(dst)
+    if dst.exists() and src.samefile(dst):
+        raise ValueError("нельзя писать поверх исходной книги - укажи другой файл")
+    labels = mapping.get("labels", {})
+    tmp = dst.with_name(dst.name + ".tmp")
+    with zipfile.ZipFile(src) as zin:
+        done = {name: _restore_numbers(zin.read(name), labels)
+                for name in zin.namelist() if _SHEET_RE.match(name)}
+        write_copy(zin, tmp, done)
+    try:
+        rewrite(tmp, dst, unmask_values(cell_texts(tmp), mapping))
+    finally:
+        tmp.unlink(missing_ok=True)

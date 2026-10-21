@@ -170,8 +170,31 @@ class CMD:
         if mapping is None:
             print(f"mapping не найден: {args.mapping}", file=sys.stderr)
             return 2
+        src_path = Path(args.file)
+        kind = src_path.suffix.lower() if args.file != "-" else ""
+        if kind in (".xlsx", ".docx"):
+            return CMD.unmask_office(args, src_path, kind, mapping)
         restored = Masker(ner=False).unmask(ops.read(args.file), mapping)
         ops.write(args.output, restored)
+        return 0
+
+    @staticmethod
+    def unmask_office(args: argparse.Namespace, src_path: Path, kind: str, mapping: dict) -> int:
+        # Книга и документ Word восстанавливаются в файл того же формата
+        from ...formats import docx
+
+        stem = src_path.stem.removesuffix(".masked")
+        out = args.output or str(src_path.with_name(f"{stem}.unmasked{src_path.suffix}"))
+        if out == "-":
+            print("файл этого формата нельзя писать в stdout - укажи -o файл", file=sys.stderr)
+            return 2
+        run = xlsx.unmask_workbook if kind == ".xlsx" else docx.unmask_document
+        try:
+            run(src_path, out, mapping)
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        print(f"восстановлено: {out}", file=sys.stderr)
         return 0
 
     @staticmethod

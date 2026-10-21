@@ -11,6 +11,7 @@ from ..detection.recognizers.regulars import ID_DOCS, LABELLED_VALUES
 from ..detection.recognizers.validators import KPP_FORMAT
 from ..detection.registry.entity_types import REQUISITE_WORD, requisite_type
 from ..detection.registry.legal_forms import CELL_FORM
+from ..engine.labels import unmask
 
 # Ссылки на символы: числовые (`&#10;` - перевод строки в ячейке) и пять именованных из XML.
 _REF_RE = re.compile(r"&(?:#x([0-9A-Fa-f]+)|#(\d+)|(amp|lt|gt|quot|apos));")
@@ -168,6 +169,12 @@ def numbers_after_labels(values: list[str]) -> dict[str, tuple[str, str]]:
             out[value.strip()] = hit
         prev = value
     return out
+
+
+def unmask_values(values: list[str], mapping: dict) -> list[str]:
+    """Вернуть оригиналы в значения по порядку; пустые и пробельные - как есть."""
+
+    return [unmask(value, mapping) if value.strip() else value for value in values]
 
 
 def mask_values(values: list[str], masker, mapping: dict | None) -> tuple[list[str], dict]:

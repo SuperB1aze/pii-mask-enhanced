@@ -59,7 +59,8 @@ def main() -> None:
     p = sub.add_parser("unmask", help="вернуть оригиналы в ответ модели")
     p.add_argument("file")
     p.add_argument("--mapping", required=True)
-    p.add_argument("-o", "--output", help="дефолт stdout")
+    p.add_argument("-o", "--output",
+                   help="дефолт stdout; для .docx и .xlsx - <stem>.unmasked.docx/.xlsx")
     p.set_defaults(func=CMD.cmd_unmask)
 
     p = sub.add_parser("presets", help="какие наборы типов знает сервис")

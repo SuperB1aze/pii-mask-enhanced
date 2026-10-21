@@ -9,9 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, NamedTuple
 
-from .office_xml import (cell_label, clear_attrs, counterparty_words, escape, is_label,
-                         mask_values, numbers_after_labels, unescape, unknown_text_parts,
-                         write_copy)
+from .office_xml import *
 
 _TOKEN_RE = re.compile(
     # узел с текстом: видимый текст, удаленный при рецензировании, код поля
@@ -321,3 +319,8 @@ def mask_document(src: str | Path, dst: str | Path, masker, mapping: dict | None
     masked, mapping = mask_values(values, masker, mapping)
     rewrite(src, dst, masked)
     return mapping
+
+
+def unmask_document(src: str | Path, dst: str | Path, mapping: dict) -> None:
+    # оригиналы обратно в документ: абзацы, колонтитулы, ссылки
+    rewrite(src, dst, unmask_values(paragraph_texts(src), mapping))

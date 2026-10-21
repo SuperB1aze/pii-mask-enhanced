@@ -522,3 +522,32 @@ def test_column_header_labelled_numbers(tmp_path):
     labelled = xlsx.labelled_numbers(path)
     assert {"123", "124", "777"} <= set(labelled)
     assert labelled["777"][0] == "PERSON_ID"
+
+
+def test_unmask_workbook_restores_text_and_numbers(tmp_path):
+    """mask -> unmask возвращает книгу: текст на месте, число снова числовая ячейка."""
+    from pii_mask_enhanced.engine.core import Masker
+
+    src = _book(tmp_path, shared=["ООО «Ромашка»"], inline=["Петров Иван Сергеевич"],
+                numbers=["771945678122", "7"])
+    masked = tmp_path / "book.masked.xlsx"
+    mapping = xlsx.mask_workbook(src, masked, Masker(types=("ORG", "PERSON", "INN")))
+    assert "771945678122" not in xlsx.cell_texts(masked)
+
+    restored = tmp_path / "book.unmasked.xlsx"
+    xlsx.unmask_workbook(masked, restored, mapping)
+    assert xlsx.cell_texts(restored) == xlsx.cell_texts(src)
+    sheet = zipfile.ZipFile(restored).read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert '<c r="C1"><v>771945678122</v></c>' in sheet
+    assert not (tmp_path / "book.unmasked.xlsx.tmp").exists()
+
+
+def test_unmask_workbook_keeps_text_label_as_text(tmp_path):
+    """Метка в текстовой ячейке остается текстом, даже если оригинал - цифры."""
+    src = _book(tmp_path, shared=["{{INN_1}}"])
+    mapping = {"version": 1, "labels": {"{{INN_1}}": {
+        "type": "INN", "original": "7708123450", "key": "7708123450", "n": 1}}}
+    dst = tmp_path / "out.xlsx"
+    xlsx.unmask_workbook(src, dst, mapping)
+    assert xlsx.cell_texts(dst) == ["7708123450"]
+    assert "<v>7708123450</v>" not in zipfile.ZipFile(dst).read("xl/worksheets/sheet1.xml").decode()

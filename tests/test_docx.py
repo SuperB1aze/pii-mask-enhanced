@@ -355,3 +355,37 @@ def test_table_labels_scan(tmp_path):
     src = _docx(tmp_path / "s.docx", [_table([["Табельный номер"], ["123"], ["124"]])])
     labelled = docx.table_labels(src)
     assert labelled["123"][0] == "PERSON_ID" and labelled["124"][0] == "PERSON_ID"
+
+
+def test_unmask_document_restores_text(tmp_path):
+    """mask -> unmask возвращает документ с тем же текстом."""
+    from pii_mask_enhanced.engine.core import Masker
+
+    src = _docx(tmp_path / "u.docx", [_para(["Директор Соко", "лова Анна Владимировна"]),
+                                       _para(["Итого"])])
+    masked = tmp_path / "u.masked.docx"
+    mapping = docx.mask_document(src, masked, Masker(types=("PERSON",)))
+    restored = tmp_path / "u.unmasked.docx"
+    docx.unmask_document(masked, restored, mapping)
+    assert docx.paragraph_texts(restored) == docx.paragraph_texts(src)
+
+
+def test_cli_unmask_docx_default_name(tmp_path):
+    import json
+    import sys
+
+    from pii_mask_enhanced.interfaces.cli.cli import main
+
+    src = _docx(tmp_path / "отчет.masked.docx", [_para(["Подписал {{PERSON_1}}"])])
+    mp = tmp_path / "отчет.mapping.json"
+    mp.write_text(json.dumps({"version": 1, "labels": {"{{PERSON_1}}": {
+        "type": "PERSON", "original": "Соколова Анна", "key": "соколова анна", "n": 1}}},
+        ensure_ascii=False), encoding="utf-8")
+    old, sys.argv = sys.argv, ["pii-mask", "unmask", str(src), "--mapping", str(mp)]
+    try:
+        with pytest.raises(SystemExit) as exc:
+            main()
+    finally:
+        sys.argv = old
+    assert exc.value.code == 0
+    assert docx.paragraph_texts(tmp_path / "отчет.unmasked.docx") == ["Подписал Соколова Анна"]
