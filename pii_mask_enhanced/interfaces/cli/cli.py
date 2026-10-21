@@ -57,11 +57,12 @@ def main() -> None:
                         "нужен там, где у названия нет ни кавычек, ни орг-формы")
     p.set_defaults(func=CMD.cmd_mask)
 
-    p = sub.add_parser("unmask", help="вернуть оригиналы в ответ модели")
+    p = sub.add_parser("unmask", help="вернуть оригиналы в замаскированный файл или ответ модели")
     p.add_argument("file")
-    p.add_argument("--mapping", required=True)
+    p.add_argument("--mapping", required=True, help="файл mapping, созданный при маскировке")
     p.add_argument("-o", "--output",
-                   help="дефолт stdout; для .docx и .xlsx - <stem>.unmasked.docx/.xlsx")
+                   help="дефолт: для текста - stdout, для .doc, .docx и .xlsx - "
+                        "<stem>.unmasked.<расширение исходника>")
     p.set_defaults(func=CMD.cmd_unmask)
 
     p = sub.add_parser("presets", help="какие наборы типов знает сервис")
