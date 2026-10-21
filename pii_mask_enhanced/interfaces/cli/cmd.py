@@ -3,15 +3,22 @@ from __future__ import annotations
 
 import argparse
 import functools
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from ...detection import presets
 from ...detection.registry.entity_types import BY_NAME
+
 from ...engine.core import Masker
 from ...engine.settings import Options, build_masker, type_names
+
 from ...formats import xlsx
 from .file_ops import FileOperations as ops
+
+from ...formats.doc import DocError, as_docx, save_as_doc
+from ...formats import docx
 
 
 class CliError(Exception):
@@ -93,20 +100,27 @@ class CMD:
 
     @staticmethod
     def mask_legacy_doc(args: argparse.Namespace, src_path: Path) -> int:
-        # .doc переводится во временный .docx и маскируется как .docx. Имена
-        # результата и реестра считаем от исходного файла.
-        from ...formats.doc import DocError, as_docx
+        # .doc переводится во временный .docx, маскируется как .docx и сохраняется
+        # обратно в .doc (или в .docx, если так задан -o)
 
         stem = src_path.with_suffix("")
-        out = args.output or f"{stem}.masked.docx"
+        out = args.output or f"{stem}.masked.doc"
         mapping_path = args.mapping or f"{stem}.mapping.json"
         CMD._check_paths((out, args.file, "результат и исходный файл"),
                          (mapping_path, args.file, "реестр и исходный файл"))
+        to_doc = Path(out).suffix.lower() == ".doc"
         try:
-            with as_docx(src_path) as converted:
+            with as_docx(src_path) as converted, \
+                    tempfile.TemporaryDirectory(prefix="pii-doc-") as tmp:
+                if converted.suffix.lower() != ".docx":
+                    converted = Path(shutil.copyfile(converted, Path(tmp) / "source.docx"))
+                docx_out = str(Path(tmp) / "masked.docx") if to_doc else out
                 inner = argparse.Namespace(**{**vars(args), "file": str(converted),
-                                              "output": out, "mapping": mapping_path})
-                return CMD.cmd_mask(inner)
+                                              "output": docx_out, "mapping": mapping_path})
+                code = CMD.cmd_mask(inner)
+                if code == 0 and to_doc:
+                    save_as_doc(docx_out, out)
+                return code
         except DocError as exc:
             raise CliError(str(exc)) from exc
 
@@ -174,6 +188,8 @@ class CMD:
         kind = src_path.suffix.lower() if args.file != "-" else ""
         if kind in (".xlsx", ".docx"):
             return CMD.unmask_office(args, src_path, kind, mapping)
+        if kind == ".doc":
+            return CMD.unmask_legacy_doc(args, src_path, mapping)
         restored = Masker(ner=False).unmask(ops.read(args.file), mapping)
         ops.write(args.output, restored)
         return 0
@@ -192,6 +208,33 @@ class CMD:
         try:
             run(src_path, out, mapping)
         except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        print(f"восстановлено: {out}", file=sys.stderr)
+        return 0
+
+    @staticmethod
+    def unmask_legacy_doc(args: argparse.Namespace, src_path: Path, mapping: dict) -> int:
+        # .doc -> временный .docx -> оригиналы -> снова .doc
+
+        stem = src_path.stem.removesuffix(".masked")
+        out = args.output or str(src_path.with_name(f"{stem}.unmasked.doc"))
+        if out == "-":
+            print("файл этого формата нельзя писать в stdout - укажи -o файл", file=sys.stderr)
+            return 2
+        if Path(out) == src_path:
+            print(f"результат и исходный файл - один и тот же путь ({out})", file=sys.stderr)
+            return 2
+        try:
+            with as_docx(src_path) as converted, \
+                    tempfile.TemporaryDirectory(prefix="pii-doc-") as tmp:
+                restored = Path(tmp) / "restored.docx"
+                docx.unmask_document(converted, restored, mapping)
+                if Path(out).suffix.lower() == ".doc":
+                    save_as_doc(restored, out)
+                else:
+                    shutil.copyfile(restored, out)
+        except (DocError, ValueError) as exc:
             print(exc, file=sys.stderr)
             return 2
         print(f"восстановлено: {out}", file=sys.stderr)

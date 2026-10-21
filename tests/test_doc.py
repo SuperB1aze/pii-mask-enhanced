@@ -1,4 +1,4 @@
-"""Документ Word 97-2003: .doc -> временный .docx -> .masked.docx.
+"""Документ Word 97-2003: .doc -> временный .docx -> .masked.doc.
 
 Сами конвертеры (LibreOffice, Word) в обычном прогоне подменяются заглушкой,
 которая кладет готовый .docx: проверяется обвязка - выбор конвертера, ошибки,
@@ -27,12 +27,16 @@ def _ole(path):
 
 @pytest.fixture
 def fake_converter(monkeypatch, tmp_path):
-    """Конвертер, который вместо .doc кладет заранее собранный .docx."""
+    """Конвертер, который вместо .doc кладет заранее собранный .docx, а вместо
+    .docx -> .doc - заголовок OLE2, запомнив текст полученного .docx."""
     template = _docx(tmp_path / "template.docx",
                      [_para(["Директор Соколова Анна Владимировна"])])
     seen = {}
 
-    def convert(src, outdir):
+    def convert(src, outdir, fmt="docx"):
+        if fmt == "doc":
+            seen["to_doc"] = paragraph_texts(src)
+            return _ole(outdir / f"{src.stem}.doc")
         seen["src"] = src
         dst = outdir / f"{src.stem}.docx"
         shutil.copyfile(template, dst)
@@ -118,15 +122,37 @@ def _run_cli(argv):
     return exit_info.value.code
 
 
-def test_cli_masks_doc_into_docx(tmp_path, fake_converter):
-    """Сквозной путь: .doc на входе, .masked.docx и реестр рядом с исходником."""
+def test_cli_masks_doc_into_doc(tmp_path, fake_converter):
+    """Сквозной путь: .doc на входе, .masked.doc и реестр рядом с исходником."""
     src = _ole(tmp_path / "contract.doc")
     assert _run_cli(["mask", str(src), "--types", "PERSON"]) == 0
-    out = tmp_path / "contract.masked.docx"
-    text = " ".join(paragraph_texts(out))
+    assert (tmp_path / "contract.masked.doc").read_bytes()[:8] == OLE_HEADER[:8]
+    text = " ".join(fake_converter["to_doc"])
     assert "Соколова" not in text
     assert "{{PERSON_1}}" in text
     assert (tmp_path / "contract.mapping.json").exists()
+
+
+def test_cli_masks_doc_into_docx_by_output_name(tmp_path, fake_converter):
+    src = _ole(tmp_path / "contract.doc")
+    out = tmp_path / "contract.masked.docx"
+    assert _run_cli(["mask", str(src), "--types", "PERSON", "-o", str(out)]) == 0
+    assert "{{PERSON_1}}" in " ".join(paragraph_texts(out))
+    assert "to_doc" not in fake_converter
+
+
+def test_cli_unmasks_doc_into_doc(tmp_path, fake_converter):
+    """masked .doc -> .unmasked.doc; в .doc уходит текст с оригиналами."""
+    import json
+
+    masked = _docx(tmp_path / "contract.masked.doc", [_para(["Директор {{PERSON_1}}"])])
+    mp = tmp_path / "contract.mapping.json"
+    mp.write_text(json.dumps({"version": 1, "labels": {"{{PERSON_1}}": {
+        "type": "PERSON", "original": "Соколова Анна", "key": "соколова анна", "n": 1}}},
+        ensure_ascii=False), encoding="utf-8")
+    assert _run_cli(["unmask", str(masked), "--mapping", str(mp)]) == 0
+    assert (tmp_path / "contract.unmasked.doc").read_bytes()[:8] == OLE_HEADER[:8]
+    assert fake_converter["to_doc"] == ["Директор Соколова Анна"]
 
 
 def test_cli_reports_conversion_error(tmp_path, monkeypatch, capsys):
@@ -173,3 +199,12 @@ def test_real_word_roundtrip(tmp_path, monkeypatch):
 
     with as_docx(src_doc) as converted:
         assert [t for t in paragraph_texts(converted) if t.strip()] == paras
+
+
+def test_cli_masks_docx_with_doc_extension(tmp_path, fake_converter):
+    """.docx, переименованный в .doc, маскируется без конвертации туда и без рекурсии."""
+    src = _docx(tmp_path / "renamed.doc", [_para(["Директор Соколова Анна Владимировна"])])
+    assert _run_cli(["mask", str(src), "--types", "PERSON"]) == 0
+    assert "src" not in fake_converter
+    assert "{{PERSON_1}}" in " ".join(fake_converter["to_doc"])
+    assert (tmp_path / "renamed.masked.doc").exists()

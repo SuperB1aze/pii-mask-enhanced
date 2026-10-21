@@ -27,6 +27,7 @@ _SOFFICE_PATHS = (
 
 TIMEOUT = 120
 _WD_FORMAT_DOCX = 16                  # wdFormatDocumentDefault
+_WD_FORMAT_DOC = 0                    # wdFormatDocument97
 _MSO_FORCE_DISABLE_MACROS = 3         # msoAutomationSecurityForceDisable
 
 
@@ -73,11 +74,11 @@ def _word_available() -> bool:
     return True
 
 
-def _via_libreoffice(soffice: str, src: Path, outdir: Path) -> Path:
+def _via_libreoffice(soffice: str, src: Path, outdir: Path, fmt: str = "docx") -> Path:
     # Свой профиль на каждый вызов
     profile = (outdir / "lo-profile").as_uri()
     cmd = [soffice, f"-env:UserInstallation={profile}", "--headless", "--norestore",
-           "--convert-to", "docx", "--outdir", str(outdir), str(src)]
+           "--convert-to", fmt, "--outdir", str(outdir), str(src)]
     try:
         proc = subprocess.run(cmd, capture_output=True, timeout=TIMEOUT)
     except subprocess.TimeoutExpired as exc:
@@ -89,15 +90,15 @@ def _via_libreoffice(soffice: str, src: Path, outdir: Path) -> Path:
         detail = proc.stderr.decode("utf-8", "replace").strip().splitlines()
         raise DocError("LibreOffice не смог сконвертировать файл: "
                        f"{detail[-1] if detail else 'без деталей'}")
-    return outdir / f"{src.stem}.docx"
+    return outdir / f"{src.stem}.{fmt}"
 
 
-def _via_word(src: Path, outdir: Path) -> Path:
+def _via_word(src: Path, outdir: Path, fmt: str = "docx") -> Path:
     import pythoncom
     import pywintypes
     import win32com.client
 
-    dst = outdir / f"{src.stem}.docx"
+    dst = outdir / f"{src.stem}.{fmt}"
     pythoncom.CoInitialize()        # без этого COM не работает вне главного потока
     try:
         word = win32com.client.DispatchEx("Word.Application")  # свой экземпляр, не открытый пользователем
@@ -112,9 +113,10 @@ def _via_word(src: Path, outdir: Path) -> Path:
             except pywintypes.com_error as exc:
                 raise DocError("Word не открыл файл - он защищен паролем или поврежден") from exc
             try:
-                doc.SaveAs2(str(dst), FileFormat=_WD_FORMAT_DOCX)
+                doc.RemovePersonalInformation = True
+                doc.SaveAs2(str(dst), FileFormat=_WD_FORMAT_DOCX if fmt == "docx" else _WD_FORMAT_DOC)
             except pywintypes.com_error as exc:
-                raise DocError("Word не смог сохранить файл в .docx") from exc
+                raise DocError(f"Word не смог сохранить файл в .{fmt}") from exc
             finally:
                 doc.Close(SaveChanges=0)
         finally:
@@ -133,12 +135,12 @@ def _check_docx(path: Path) -> None:
             raise DocError("результат конвертации не похож на документ Word")
 
 
-def _convert(src: Path, outdir: Path) -> Path:
+def _convert(src: Path, outdir: Path, fmt: str = "docx") -> Path:
     soffice = _find_soffice()
     if soffice:
-        return _via_libreoffice(soffice, src, outdir)
+        return _via_libreoffice(soffice, src, outdir, fmt)
     if _word_available():
-        return _via_word(src, outdir)
+        return _via_word(src, outdir, fmt)
     if sys.platform == "win32":
         raise DocError("для .doc нужен LibreOffice или MS Word с pywin32 "
                        "(pip install .[word]); либо пересохраните файл в .docx")
@@ -166,3 +168,15 @@ def as_docx(src: str | Path) -> Iterator[Path]:
         dst = _convert(work.resolve(), tmp_dir.resolve())
         _check_docx(dst)
         yield dst
+
+
+def save_as_doc(src: str | Path, dst: str | Path) -> None:
+    """Сохранить .docx в формате Word 97-2003."""
+    with tempfile.TemporaryDirectory(prefix="pii-doc-") as tmp:
+        tmp_dir = Path(tmp).resolve()
+        work = tmp_dir / "source.docx"
+        shutil.copyfile(src, work)
+        out = _convert(work, tmp_dir, "doc")
+        if not out.is_file() or _sniff(out) != "doc":
+            raise DocError("конвертер не создал .doc")
+        shutil.copyfile(out, dst)
