@@ -4,7 +4,7 @@ import zipfile
 
 import pytest
 
-from pii_mask_enhanced.formats import office_xml
+from pii_mask_enhanced.formats.common import office_xml
 
 _NO_TEXT = re.compile(r"^(\[Content_Types\]\.xml|_rels/)")
 

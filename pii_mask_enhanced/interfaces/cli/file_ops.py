@@ -6,6 +6,17 @@ import os
 import sys
 from pathlib import Path
 
+from ...formats import powerpoint, word
+from ...formats.pdf import extract_text
+
+# текст документа одной строкой
+_READERS = {
+    ".docx": lambda path: "\n".join(word.paragraph_texts(path)),
+    ".pptx": lambda path: "\n".join(powerpoint.paragraph_texts(path)),
+    ".pdf": extract_text,
+}
+
+
 class FileOperations:
     @staticmethod
     def read(src: str) -> str:
@@ -35,20 +46,14 @@ class FileOperations:
         # права 600 (только владелец может читать и писать файл)
 
     @staticmethod
-    def probe_text(path, is_book: bool, is_doc: bool, is_pdf: bool) -> str | None:
-        # Текст документа для определения профиля; None - прочитать не вышло. Книга Excel вовсе не пробуется.
+    def probe_text(path, kind: str) -> str | None:
+        # Текст документа для определения профиля; None - прочитать не вышло
 
         try:
-            if is_book:
+            if kind == ".xlsx":
                 return None
-            if is_doc:
-                from ...formats.docx import paragraph_texts
-
-                return "\n".join(paragraph_texts(path))
-            if is_pdf:
-                from ...formats.pdf import extract_text
-
-                return extract_text(path)
+            if kind in _READERS:
+                return _READERS[kind](path)
             return FileOperations.read(path)
         except Exception:                                 # noqa: BLE001
             return None

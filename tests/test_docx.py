@@ -8,7 +8,7 @@ import zipfile
 
 import pytest
 
-from pii_mask_enhanced.formats import docx
+from pii_mask_enhanced.formats.word import docx
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">

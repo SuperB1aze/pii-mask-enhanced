@@ -9,7 +9,7 @@
 import pytest
 
 from pii_mask_enhanced.engine.core import Masker
-from pii_mask_enhanced.formats.office_xml import cell_label_type
+from pii_mask_enhanced.formats.common.office_xml import cell_label_type
 
 from masking import mask as _mask
 

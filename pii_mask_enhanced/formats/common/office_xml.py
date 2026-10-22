@@ -1,4 +1,4 @@
-"""Общие части для форматов Office Open XML (.docx, .xlsx): zip-архив с XML внутри."""
+"""Общие части для форматов Office Open XML (.docx, .xlsx, .pptx): zip-архив с XML внутри."""
 from __future__ import annotations
 
 import re
@@ -6,12 +6,12 @@ import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape as _sax_escape
 
-from ..detection.recognizers.entity import id_doc_key
-from ..detection.recognizers.regulars import ID_DOCS, LABELLED_VALUES
-from ..detection.recognizers.validators import KPP_FORMAT
-from ..detection.registry.entity_types import REQUISITE_WORD, requisite_type
-from ..detection.registry.legal_forms import CELL_FORM
-from ..engine.labels import unmask
+from ...detection.recognizers.entity import id_doc_key
+from ...detection.recognizers.regulars import ID_DOCS, LABELLED_VALUES
+from ...detection.recognizers.validators import KPP_FORMAT
+from ...detection.registry.entity_types import REQUISITE_WORD, requisite_type
+from ...detection.registry.legal_forms import CELL_FORM
+from ...engine.labels import unmask
 
 # Ссылки на символы: числовые (`&#10;` - перевод строки в ячейке) и пять именованных из XML.
 _REF_RE = re.compile(r"&(?:#x([0-9A-Fa-f]+)|#(\d+)|(amp|lt|gt|quot|apos));")

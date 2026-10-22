@@ -6,7 +6,7 @@ import re
 import zipfile
 from pathlib import Path
 
-from .office_xml import (T_RE, cell_label, clear_attrs, counterparty_words, escape, is_label,
+from ..common.office_xml import (T_RE, cell_label, clear_attrs, counterparty_words, escape, is_label,
                          mask_values, runs_text, tag, unknown_text_parts, unescape,
                          unmask_values, write_copy)
 
@@ -284,18 +284,33 @@ def mask_workbook(src: str | Path, dst: str | Path, masker, mapping: dict | None
 
 _MASKED_NUM_RE = re.compile(
     rb'<c ([^>]*?) t="inlineStr"><is><t xml:space="preserve">([^<]*)</t></is></c>')
+# Excel при пересохранении переносит метку в общую таблицу строк, в ячейке остается номер строки
+_SHARED_NUM_RE = re.compile(rb'<c ([^>]*?)\bt="s"([^>]*)><v>(\d+)</v></c>')
 _NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
 _SHEET_RE = re.compile(r"^xl/worksheets/[^/]+\.xml$")
+_SHARED_STRINGS = "xl/sharedStrings.xml"
 
 
-def _restore_numbers(blob: bytes, labels: dict) -> bytes:
-    def one(m: re.Match) -> bytes:
-        rec = labels.get(unescape(m.group(2).decode("utf-8")))
+def _restore_numbers(blob: bytes, labels: dict, shared: list[str]) -> bytes:
+    def number(label: str) -> bytes | None:
+        rec = labels.get(label)
         if not rec or not rec.get("number") or not _NUMBER_RE.fullmatch(rec["original"]):
-            return m.group(0)
-        return b"<c " + m.group(1) + b"><v>" + rec["original"].encode("utf-8") + b"</v></c>"
+            return None
+        return rec["original"].encode("utf-8")
 
-    return _MASKED_NUM_RE.sub(one, blob)
+    def inline(m: re.Match) -> bytes:
+        value = number(unescape(m.group(2).decode("utf-8")))
+        return m.group(0) if value is None else b"<c " + m.group(1) + b"><v>" + value + b"</v></c>"
+
+    def from_shared(m: re.Match) -> bytes:
+        i = int(m.group(3))
+        value = number(shared[i]) if i < len(shared) else None
+        if value is None:
+            return m.group(0)
+        attrs = b" ".join(a for a in (m.group(1).strip(), m.group(2).strip()) if a)
+        return b"<c " + attrs + b"><v>" + value + b"</v></c>"
+
+    return _SHARED_NUM_RE.sub(from_shared, _MASKED_NUM_RE.sub(inline, blob))
 
 
 def unmask_workbook(src: str | Path, dst: str | Path, mapping: dict) -> None:
@@ -306,7 +321,9 @@ def unmask_workbook(src: str | Path, dst: str | Path, mapping: dict) -> None:
     labels = mapping.get("labels", {})
     tmp = dst.with_name(dst.name + ".tmp")
     with zipfile.ZipFile(src) as zin:
-        done = {name: _restore_numbers(zin.read(name), labels)
+        shared = ([runs_text(m.group(1)) for m in _ITEM_RE["si"].finditer(zin.read(_SHARED_STRINGS))]
+                  if _SHARED_STRINGS in zin.namelist() else [])
+        done = {name: _restore_numbers(zin.read(name), labels, shared)
                 for name in zin.namelist() if _SHEET_RE.match(name)}
         write_copy(zin, tmp, done)
     try:

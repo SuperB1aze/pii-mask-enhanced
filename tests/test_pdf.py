@@ -71,7 +71,7 @@ def test_broken_file_is_an_error(tmp_path):
 
 
 def test_missing_binary_is_named(tmp_path, monkeypatch):
-    monkeypatch.setattr("pii_mask_enhanced.formats.pdf.shutil.which", lambda _: None)
+    monkeypatch.setattr("pii_mask_enhanced.formats.pdf.pdf.shutil.which", lambda _: None)
     with pytest.raises(PdfError, match="poppler"):
         extract_text(tmp_path / "any.pdf")
 

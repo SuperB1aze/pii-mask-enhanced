@@ -99,7 +99,7 @@ def test_not_an_issuer(src):
     ("Кем выдан", "не указано", None),
 ])
 def test_issuer_cell_label(label, value, expected):
-    from pii_mask_enhanced.formats.office_xml import cell_label_type
+    from pii_mask_enhanced.formats.common.office_xml import cell_label_type
 
     assert cell_label_type(label, value) == expected
 

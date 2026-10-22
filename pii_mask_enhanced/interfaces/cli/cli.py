@@ -61,7 +61,7 @@ def main() -> None:
     p.add_argument("file")
     p.add_argument("--mapping", required=True, help="файл mapping, созданный при маскировке")
     p.add_argument("-o", "--output",
-                   help="дефолт: для текста - stdout, для .doc, .docx и .xlsx - "
+                   help="дефолт: для текста - stdout, для .doc, .docx, .xls, .xlsx, .ppt и .pptx - "
                         "<stem>.unmasked.<расширение исходника>")
     p.set_defaults(func=CMD.cmd_unmask)
 

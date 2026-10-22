@@ -9,7 +9,7 @@ import pytest
 from pii_mask_enhanced.detection import presets
 from pii_mask_enhanced.detection.recognizers.recognizers import find_format_entities
 from pii_mask_enhanced.engine.core import Masker
-from pii_mask_enhanced.formats.office_xml import cell_label_type, numbers_after_labels
+from pii_mask_enhanced.formats.common.office_xml import cell_label_type, numbers_after_labels
 
 ACC = "40817810099910004312"
 

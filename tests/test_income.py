@@ -6,7 +6,7 @@
 """
 import pytest
 
-from pii_mask_enhanced.formats.office_xml import cell_label_type
+from pii_mask_enhanced.formats.common.office_xml import cell_label_type
 
 from masking import mask as _mask, mask_with_preset as _mask_preset
 

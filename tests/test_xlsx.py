@@ -7,7 +7,7 @@ import zipfile
 
 import pytest
 
-from pii_mask_enhanced.formats import xlsx
+from pii_mask_enhanced.formats.excel import xlsx
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -540,6 +540,19 @@ def test_unmask_workbook_restores_text_and_numbers(tmp_path):
     sheet = zipfile.ZipFile(restored).read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert '<c r="C1"><v>771945678122</v></c>' in sheet
     assert not (tmp_path / "book.unmasked.xlsx.tmp").exists()
+
+
+def test_unmask_workbook_restores_number_from_shared_strings(tmp_path):
+    """Книга, пересохраненная в Excel: метка числа уже в общей таблице строк, а не в ячейке."""
+    src = _book(tmp_path, shared=["{{INN_1}}", "Итого"])
+    mapping = {"version": 1, "labels": {"{{INN_1}}": {
+        "type": "INN", "original": "7708123450", "key": "7708123450", "n": 1, "number": True}}}
+    dst = tmp_path / "out.xlsx"
+    xlsx.unmask_workbook(src, dst, mapping)
+    sheet = zipfile.ZipFile(dst).read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert '<c r="A1"><v>7708123450</v></c>' in sheet
+    assert '<c r="A2" t="s"><v>1</v></c>' in sheet, "текстовая ячейка осталась ссылкой на строку"
+    assert "{{INN_1}}" not in xlsx.cell_texts(dst)
 
 
 def test_unmask_workbook_keeps_text_label_as_text(tmp_path):

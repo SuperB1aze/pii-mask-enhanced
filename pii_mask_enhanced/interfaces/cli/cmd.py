@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Callable, NamedTuple
 
 from ...detection import presets
 from ...detection.registry.entity_types import BY_NAME
@@ -14,11 +15,26 @@ from ...detection.registry.entity_types import BY_NAME
 from ...engine.core import Masker
 from ...engine.settings import Options, build_masker, type_names
 
-from ...formats import xlsx
 from .file_ops import FileOperations as ops
 
-from ...formats.doc import DocError, as_docx, save_as_doc
-from ...formats import docx
+from ...formats import excel, powerpoint, word
+from ...formats.common.legacy import ConvertError
+
+
+class _Office(NamedTuple):
+    """Формат Office Open XML: маскируется и восстанавливается в файл того же формата."""
+    what: str                       # "книг" - для сообщений
+    mask: Callable
+    unmask: Callable
+
+
+_OFFICE = {
+    ".xlsx": _Office("книг", excel.mask_workbook, excel.unmask_workbook),
+    ".docx": _Office("документов Word", word.mask_document, word.unmask_document),
+    ".pptx": _Office("презентаций", powerpoint.mask_presentation, powerpoint.unmask_presentation),
+}
+# старый формат: работаем с его версией в новом
+_LEGACY = {".doc": word.DOC, ".xls": excel.XLS, ".ppt": powerpoint.PPT}
 
 
 class CliError(Exception):
@@ -34,8 +50,8 @@ class CMD:
 
             src_path = None if args.file == "-" else Path(args.file)
             kind = src_path.suffix.lower() if src_path else ""
-            if src_path is not None and kind == ".doc":
-                return CMD.mask_legacy_doc(args, src_path)
+            if src_path is not None and kind in _LEGACY:
+                return CMD.mask_legacy(args, src_path, kind)
 
             stem = src_path.with_suffix("") if src_path else None
             suffix = ".masked" + (".md" if kind in ("", ".pdf") else src_path.suffix)
@@ -52,8 +68,8 @@ class CMD:
             # текст для профиля нужен и --preset auto, и --auto-profile: читаем один раз
             @functools.cache
             def probe() -> str | None:
-                if kind in (".xlsx", ".docx", ".pdf"):
-                    return ops.probe_text(args.file, kind == ".xlsx", kind == ".docx", kind == ".pdf")
+                if kind in (*_OFFICE, ".pdf"):
+                    return ops.probe_text(args.file, kind)
                 try:
                     return source()
                 except Exception:                     # noqa: BLE001
@@ -62,20 +78,17 @@ class CMD:
             masker, org_names = CMD._build_masker(args, probe)
             mapping = ops.load_mapping(mapping_path)  # существующий mapping продолжаем
 
-            if kind in (".xlsx", ".docx"):
-                from ...formats import docx
-
-                what = "книг" if kind == ".xlsx" else "документов Word"
+            if kind in _OFFICE:
                 if args.audit:
-                    raise CliError(f"--audit для {what} пока не поддержан: аудитор работает по тексту")
+                    raise CliError(f"--audit для {_OFFICE[kind].what} пока не поддержан: "
+                                   "аудитор работает по тексту")
                 if out is None or out == "-":
                     raise CliError("файл этого формата нельзя писать в stdout - укажи -o файл")
-                run = xlsx.mask_workbook if kind == ".xlsx" else docx.mask_document
-                mapping = run(args.file, out, masker, mapping)
+                mapping = _OFFICE[kind].mask(args.file, out, masker, mapping)
             else:
                 if kind == ".pdf":
                     # PDF читаем текстом и текстом же отдаем: собрать PDF обратно нельзя,
-                    # замена другой длины ломает верстку строки (см. pii_mask_enhanced/formats/pdf.py).
+                    # замена другой длины ломает верстку строки (см. pii_mask_enhanced/formats/pdf/pdf.py).
                     from ...formats.pdf import PdfError, extract_text
 
                     try:
@@ -99,29 +112,29 @@ class CMD:
         return 0
 
     @staticmethod
-    def mask_legacy_doc(args: argparse.Namespace, src_path: Path) -> int:
-        # .doc переводится во временный .docx, маскируется как .docx и сохраняется
-        # обратно в .doc (или в .docx, если так задан -o)
-
+    def mask_legacy(args: argparse.Namespace, src_path: Path, kind: str) -> int:
+        # .doc (.xls, .ppt) переводится во временный .docx (.xlsx, .pptx), маскируется в нем и
+        # сохраняется обратно в старый формат (или в новый, если так задан -o)
+        fmt = _LEGACY[kind]
         stem = src_path.with_suffix("")
-        out = args.output or f"{stem}.masked.doc"
+        out = args.output or f"{stem}.masked{kind}"
         mapping_path = args.mapping or f"{stem}.mapping.json"
         CMD._check_paths((out, args.file, "результат и исходный файл"),
                          (mapping_path, args.file, "реестр и исходный файл"))
-        to_doc = Path(out).suffix.lower() == ".doc"
+        to_old = Path(out).suffix.lower() == kind
         try:
-            with as_docx(src_path) as converted, \
-                    tempfile.TemporaryDirectory(prefix="pii-doc-") as tmp:
-                if converted.suffix.lower() != ".docx":
-                    converted = Path(shutil.copyfile(converted, Path(tmp) / "source.docx"))
-                docx_out = str(Path(tmp) / "masked.docx") if to_doc else out
+            with fmt.as_new(src_path) as converted, \
+                    tempfile.TemporaryDirectory(prefix="pii-legacy-") as tmp:
+                if converted.suffix.lower() != fmt.new:
+                    converted = Path(shutil.copyfile(converted, Path(tmp) / f"source{fmt.new}"))
+                new_out = str(Path(tmp) / f"masked{fmt.new}") if to_old else out
                 inner = argparse.Namespace(**{**vars(args), "file": str(converted),
-                                              "output": docx_out, "mapping": mapping_path})
+                                              "output": new_out, "mapping": mapping_path})
                 code = CMD.cmd_mask(inner)
-                if code == 0 and to_doc:
-                    save_as_doc(docx_out, out)
+                if code == 0 and to_old:
+                    fmt.save_as_old(new_out, out)
                 return code
-        except DocError as exc:
+        except ConvertError as exc:
             raise CliError(str(exc)) from exc
 
     @staticmethod
@@ -186,27 +199,24 @@ class CMD:
             return 2
         src_path = Path(args.file)
         kind = src_path.suffix.lower() if args.file != "-" else ""
-        if kind in (".xlsx", ".docx"):
+        if kind in _OFFICE:
             return CMD.unmask_office(args, src_path, kind, mapping)
-        if kind == ".doc":
-            return CMD.unmask_legacy_doc(args, src_path, mapping)
+        if kind in _LEGACY:
+            return CMD.unmask_legacy(args, src_path, kind, mapping)
         restored = Masker(ner=False).unmask(ops.read(args.file), mapping)
         ops.write(args.output, restored)
         return 0
 
     @staticmethod
     def unmask_office(args: argparse.Namespace, src_path: Path, kind: str, mapping: dict) -> int:
-        # Книга и документ Word восстанавливаются в файл того же формата
-        from ...formats import docx
-
+        # Книга, документ Word и презентация восстанавливаются в файл того же формата
         stem = src_path.stem.removesuffix(".masked")
         out = args.output or str(src_path.with_name(f"{stem}.unmasked{src_path.suffix}"))
         if out == "-":
             print("файл этого формата нельзя писать в stdout - укажи -o файл", file=sys.stderr)
             return 2
-        run = xlsx.unmask_workbook if kind == ".xlsx" else docx.unmask_document
         try:
-            run(src_path, out, mapping)
+            _OFFICE[kind].unmask(src_path, out, mapping)
         except ValueError as exc:
             print(exc, file=sys.stderr)
             return 2
@@ -214,11 +224,11 @@ class CMD:
         return 0
 
     @staticmethod
-    def unmask_legacy_doc(args: argparse.Namespace, src_path: Path, mapping: dict) -> int:
-        # .doc -> временный .docx -> оригиналы -> снова .doc
-
+    def unmask_legacy(args: argparse.Namespace, src_path: Path, kind: str, mapping: dict) -> int:
+        # .doc (.xls, .ppt) -> временный .docx (.xlsx, .pptx) -> оригиналы -> снова старый формат
+        fmt = _LEGACY[kind]
         stem = src_path.stem.removesuffix(".masked")
-        out = args.output or str(src_path.with_name(f"{stem}.unmasked.doc"))
+        out = args.output or str(src_path.with_name(f"{stem}.unmasked{kind}"))
         if out == "-":
             print("файл этого формата нельзя писать в stdout - укажи -o файл", file=sys.stderr)
             return 2
@@ -226,15 +236,15 @@ class CMD:
             print(f"результат и исходный файл - один и тот же путь ({out})", file=sys.stderr)
             return 2
         try:
-            with as_docx(src_path) as converted, \
-                    tempfile.TemporaryDirectory(prefix="pii-doc-") as tmp:
-                restored = Path(tmp) / "restored.docx"
-                docx.unmask_document(converted, restored, mapping)
-                if Path(out).suffix.lower() == ".doc":
-                    save_as_doc(restored, out)
+            with fmt.as_new(src_path) as converted, \
+                    tempfile.TemporaryDirectory(prefix="pii-legacy-") as tmp:
+                restored = Path(tmp) / f"restored{fmt.new}"
+                _OFFICE[fmt.new].unmask(converted, restored, mapping)
+                if Path(out).suffix.lower() == kind:
+                    fmt.save_as_old(restored, out)
                 else:
                     shutil.copyfile(restored, out)
-        except (DocError, ValueError) as exc:
+        except (ConvertError, ValueError) as exc:
             print(exc, file=sys.stderr)
             return 2
         print(f"восстановлено: {out}", file=sys.stderr)
