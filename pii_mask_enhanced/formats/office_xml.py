@@ -20,7 +20,11 @@ _NAMED = {"amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'"}
 # Текстовый узел <t> (в Word - <w:t>), в том числе пустой <t/>: он узел не открывает.
 T_RE = re.compile(rb"<(?:\w+:)?t(?:\s[^>]*)?(?<!/)>(.*?)</(?:\w+:)?t>|<(?:\w+:)?t(?:\s[^>]*)?/>", re.S)
 # Любой непустой текстовый узел - чтобы заметить текст в частях, которые мы не разбираем.
-ANY_T_RE = re.compile(rb"<(?:\w+:)?t(?:\s[^>]*)?(?<!/)>([^<]+)</(?:\w+:)?t>", re.S)
+# подписи и значения диаграммы лежат в <c:v>, в chartex - прямо в <cx:pt>.
+ANY_TEXT_RE = re.compile(
+    rb"<(?P<name>(?:\w+:)?(?:t|v|pt))(?:\s[^>]*)?(?<!/)>(?P<text>[^<]+)</(?P=name)>", re.S)
+# Вложенные файлы: книга с данными диаграммы, объект OLE
+_EMBEDDED_RE = re.compile(r"(?:^|/)embeddings/")
 
 # Свойства файла, где бывают имена: кто сохранил, о чем документ, чья организация.
 _PROPERTY_FIELDS = {
@@ -75,12 +79,17 @@ def runs_text(body: bytes) -> str:
 
 
 def unknown_text_parts(z: zipfile.ZipFile, known: set[str], no_text: re.Pattern) -> list[str]:
-    """Части с текстом, которые мы не разбираем: диаграммы, надписи, чужое."""
+    """Части с текстом, которые мы не разбираем: диаграммы, надписи, вложенные файлы, чужое."""
     bad = []
     for n in z.namelist():
-        if n in known or no_text.match(n) or not n.endswith(".xml"):
+        if n in known:
             continue
-        if any(m.group(1).strip() for m in ANY_T_RE.finditer(z.read(n))):
+        if _EMBEDDED_RE.search(n):
+            bad.append(n)
+            continue
+        if no_text.match(n) or not n.endswith(".xml"):
+            continue
+        if any(m.group("text").strip() for m in ANY_TEXT_RE.finditer(z.read(n))):
             bad.append(n)
     return sorted(bad)
 
