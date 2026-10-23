@@ -1,7 +1,9 @@
 """Общий каркас форматов с абзацами (.docx, .pptx): единицы текста, таблицы, сборка копии."""
 from __future__ import annotations
 
+import posixpath
 import re
+import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,8 +57,8 @@ def rels_targets(blob: bytes) -> dict[bytes, bytes]:
     return out
 
 
-def _rewrite_units(blob: bytes, units: list[list[Node]], values: list[str], cursor: int,
-                   render: Callable[[Node, str], bytes]) -> tuple[bytes, int]:
+def rewrite_units(blob: bytes, units: list[list[Node]], values: list[str], cursor: int,
+                  render: Callable[[Node, str], bytes]) -> tuple[bytes, int]:
     # подставить значения в единицы части по порядку; cursor - номер первого значения
     edits: list[tuple[int, int, bytes]] = []
     for nodes in units:
@@ -224,8 +226,9 @@ class Package:
         with zipfile.ZipFile(path) as z:
             return self._labels(z)
 
-    def rewrite(self, src: str | Path, dst: str | Path, values: list[str]) -> None:
-        # собрать копию файла с подставленными значениями
+    def rewrite(self, src: str | Path, dst: str | Path, values: list[str],
+                replaced: dict[str, bytes] | None = None) -> None:
+        # собрать копию файла с подставленными значениями; replaced - части целиком на замену
         src, dst = Path(src), Path(dst)
         if dst.exists() and src.samefile(dst):
             raise ValueError("нельзя писать поверх исходного файла - укажите другой файл")
@@ -240,15 +243,32 @@ class Package:
             done: dict[str, bytes] = {}
             for name, kind in self.parts(zin):
                 blob = zin.read(name)
-                done[name], cursor = _rewrite_units(blob, self.units[kind](blob), values,
-                                                    cursor, self.render)
+                done[name], cursor = rewrite_units(blob, self.units[kind](blob), values,
+                                                   cursor, self.render)
+            done.update(replaced or {})
             self.finish(zin, done)
             write_copy(zin, dst, done)
+
+    def _workbooks(self, z: zipfile.ZipFile) -> list[str]:
+        # книги с данными диаграмм: на них ведут связи частей с диаграммами
+        names = set(z.namelist())
+        out = set()
+        for name, kind in self.parts(z):
+            folder, base = posixpath.split(name)
+            rels = f"{folder}/_rels/{base}.rels"
+            if kind != "chart" or rels not in names:
+                continue
+            for target in rels_targets(z.read(rels)).values():
+                path = posixpath.normpath(posixpath.join(folder, target.decode("utf-8")))
+                if path.endswith(".xlsx") and path in names:
+                    out.add(path)
+        return sorted(out)
 
     def mask(self, src: str | Path, dst: str | Path, masker, mapping: dict | None = None) -> dict:
         # маскировка с выводом маппинга
         with zipfile.ZipFile(src) as z:
-            unknown = unknown_text_parts(z, {n for n, _ in self.parts(z)}, self.no_text)
+            books = self._workbooks(z)
+            unknown = unknown_text_parts(z, {n for n, _ in self.parts(z)} | set(books), self.no_text)
             if unknown:
                 raise ValueError(f"{self.where.capitalize()} есть текст, с которым возникла проблема "
                                  f"обезличивания: {unknown}, может произойти утечка ПД.")
@@ -257,11 +277,38 @@ class Package:
         values = self.texts(src)
         # подпись в предыдущей строке и в таблице: слева или в шапке колонки
         labelled = {**numbers_after_labels(values), **tables}
-        masker = masker.with_hints(counterparty_words(values), labelled)
-        masked, mapping = mask_values(values, masker, mapping)
-        self.rewrite(src, dst, masked)
+        masked, mapping = mask_values(values, masker.with_hints(counterparty_words(values), labelled),
+                                      mapping)
+
+        # книга с данными диаграммы маскируется как обычная книга, с тем же реестром
+        from ..excel.xlsx import mask_workbook
+
+        def mask_book(book: Path, out: Path) -> None:
+            nonlocal mapping
+            mapping = mask_workbook(book, out, masker, mapping)
+
+        self.rewrite(src, dst, masked, _embedded(src, books, mask_book))
         return mapping
 
     def unmask(self, src: str | Path, dst: str | Path, mapping: dict) -> None:
-        # оригиналы обратно в файл того же формата
-        self.rewrite(src, dst, unmask_values(self.texts(src), mapping))
+        # оригиналы обратно в файл того же формата, в том числе в книги диаграмм
+        from ..excel.xlsx import unmask_workbook
+
+        with zipfile.ZipFile(src) as z:
+            books = self._workbooks(z)
+        replaced = _embedded(src, books, lambda book, out: unmask_workbook(book, out, mapping))
+        self.rewrite(src, dst, unmask_values(self.texts(src), mapping), replaced)
+
+
+def _embedded(src: str | Path, names: list[str], run: Callable[[Path, Path], None]) -> dict[str, bytes]:
+    # Вложенная книга обрабатывается файлом во временном каталоге: в нем ПД, он удаляется сразу.
+    out: dict[str, bytes] = {}
+    if not names:
+        return out
+    with zipfile.ZipFile(src) as z, tempfile.TemporaryDirectory(prefix="pii-embedded-") as tmp:
+        for i, name in enumerate(names):
+            book, result = Path(tmp) / f"{i}.xlsx", Path(tmp) / f"{i}.out.xlsx"
+            book.write_bytes(z.read(name))
+            run(book, result)
+            out[name] = result.read_bytes()
+    return out

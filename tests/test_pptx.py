@@ -124,7 +124,7 @@ def test_unchanged_paragraph_keeps_its_runs(tmp_path):
 
 def test_masked_presentation_is_well_formed(tmp_path):
     """Каждая XML-часть результата разбирается, архив цел."""
-    dst, _ = _masked(tmp_path, [_slide(_shape([_para(["ООО «Ромашка» & партнеры <тест>"])]))],
+    dst, _ = _masked(tmp_path, [_slide(_shape([_para(["ООО «Ромашка» &amp; партнеры &lt;тест&gt;"])]))],
                      ("ORG",), ner=False)
     with zipfile.ZipFile(dst) as z:
         assert z.testzip() is None
@@ -223,16 +223,64 @@ def test_slide_titles_in_properties_are_cleared(tmp_path):
     assert "<Slides>1</Slides>" in body
 
 
-@pytest.mark.parametrize("name, blob", [
-    ("ppt/charts/chart1.xml", '<?xml version="1.0"?><c:chartSpace xmlns:c="c"><c:v>Соколова</c:v></c:chartSpace>'),
-    ("ppt/diagrams/data1.xml", '<?xml version="1.0"?><dgm:dataModel xmlns:dgm="d" xmlns:a="a">'
-                               "<a:p><a:r><a:t>Соколова</a:t></a:r></a:p></dgm:dataModel>"),
-    ("ppt/embeddings/Microsoft_Excel_Worksheet.xlsx", b"PK\x03\x04binary"),
-])
-def test_unsupported_part_refuses(tmp_path, name, blob):
-    """Диаграмма, SmartArt, вложенный файл: обезличить пока не умеем - отказ, а не пропуск."""
-    with pytest.raises(ValueError, match=name.split("/")[1]):
-        _masked(tmp_path, [_slide(_shape([_para(["Итоги"])]))], ("PERSON",), {name: blob}, ner=False)
+@pytest.mark.parametrize("name", ["ppt/embeddings/oleObject1.bin",
+                                  "ppt/embeddings/Microsoft_Word_Document.docx"])
+def test_embedded_object_refuses(tmp_path, name):
+    """Вложенный объект (не книга диаграммы): его превью-картинка покажет оригинал - отказ."""
+    with pytest.raises(ValueError, match="embeddings"):
+        _masked(tmp_path, [_slide(_shape([_para(["Итоги"])]))], ("PERSON",),
+                {name: b"PK\x03\x04binary"}, ner=False)
+
+
+def _chart_deck(tmp_path, book_values: list[str]):
+    """Презентация с диаграммой, у которой своя книга с данными."""
+    from test_xlsx import _book
+
+    (tmp_path / "book").mkdir()
+    book = _book(tmp_path / "book", book_values).read_bytes()
+    chart = ('<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a" xmlns:r="r"><c:chart><c:ser>'
+             '<c:tx><c:strRef><c:f>Лист1!$A$1</c:f><c:strCache><c:pt idx="0">'
+             "<c:v>Почта sokolova@example.ru</c:v></c:pt></c:strCache></c:strRef></c:tx></c:ser>"
+             '</c:chart><c:externalData r:id="rId1"/></c:chartSpace>')
+    rels = ('<?xml version="1.0"?><Relationships xmlns="r"><Relationship Id="rId1" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" '
+            'Target="../embeddings/Microsoft_Excel_Worksheet.xlsx"/></Relationships>')
+    return _pptx(tmp_path / "chart.pptx", [_slide(_shape([_para(["Итоги"])]))],
+                 {"ppt/charts/chart1.xml": chart, "ppt/charts/_rels/chart1.xml.rels": rels,
+                  "ppt/embeddings/Microsoft_Excel_Worksheet.xlsx": book})
+
+
+def _embedded_texts(path, tmp_path) -> list[str]:
+    from pii_mask_enhanced.formats.excel import xlsx
+
+    book = tmp_path / "inner.xlsx"
+    book.write_bytes(zipfile.ZipFile(path).read("ppt/embeddings/Microsoft_Excel_Worksheet.xlsx"))
+    return xlsx.cell_texts(book)
+
+
+def test_chart_and_its_workbook_are_masked(tmp_path):
+    """Кэш диаграммы и книга с ее данными («Изменить данные») - под одной меткой."""
+    src = _chart_deck(tmp_path, ["Почта sokolova@example.ru"])
+    dst = tmp_path / "out.pptx"
+    mapping = pptx.mask_presentation(src, dst, Masker(types=("EMAIL",), ner=False))
+    assert "sokolova@example.ru" not in _part(dst, "ppt/charts/chart1.xml")
+    assert "<c:v>Почта user1@example.com</c:v>" in _part(dst, "ppt/charts/chart1.xml")
+    assert "Почта user1@example.com" in _embedded_texts(dst, tmp_path)
+    assert len(mapping["labels"]) == 1
+
+    restored = tmp_path / "restored.pptx"
+    pptx.unmask_presentation(dst, restored, mapping)
+    assert "<c:v>Почта sokolova@example.ru</c:v>" in _part(restored, "ppt/charts/chart1.xml")
+    assert "Почта sokolova@example.ru" in _embedded_texts(restored, tmp_path)
+
+
+def test_smartart_text_is_masked(tmp_path):
+    para = "<a:p><a:r><a:t>Пишите на sokolova@example.ru</a:t></a:r></a:p>"
+    extra = {"ppt/diagrams/data1.xml": f'<?xml version="1.0"?><dgm:dataModel xmlns:dgm="d" {NS}>{para}</dgm:dataModel>',
+             "ppt/diagrams/drawing1.xml": f'<?xml version="1.0"?><dsp:drawing xmlns:dsp="s" {NS}>{para}</dsp:drawing>'}
+    dst, _ = _masked(tmp_path, [_slide(_shape([_para(["Итоги"])]))], ("EMAIL",), extra, ner=False)
+    for name in extra:
+        assert "<a:t>Пишите на user1@example.com</a:t>" in _part(dst, name)
 
 
 def test_text_outside_paragraph_refuses(tmp_path):
@@ -260,7 +308,7 @@ def test_unmask_presentation_restores_text(tmp_path):
 
 
 def _run_cli(argv):
-    from pii_mask_enhanced.interfaces.cli.cli import main
+    from pii_mask_enhanced.cli.cli import main
 
     old, sys.argv = sys.argv, ["pii-mask", *argv]
     try:

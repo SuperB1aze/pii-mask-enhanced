@@ -51,3 +51,27 @@ def test_empty_values_and_media_pass(tmp_path):
     chart = '<?xml version="1.0"?><c:chartSpace xmlns:c="c"><c:v/><c:v> </c:v></c:chartSpace>'
     assert _unknown(tmp_path, {"word/charts/chart1.xml": chart,
                                "word/media/image1.png": b"\x89PNG"}) == []
+
+
+def test_thumbnail_is_dropped(tmp_path):
+    """Миниатюра слайда - картинка с исходным текстом: в копии ее нет, связи на нее тоже."""
+    src = tmp_path / "in.zip"
+    rels = ('<?xml version="1.0"?><Relationships xmlns="r">'
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/'
+            'relationships/metadata/thumbnail" Target="docProps/thumbnail.jpeg"/>'
+            '<Relationship Id="rId1" Type="t/officeDocument" Target="ppt/presentation.xml"/>'
+            "</Relationships>")
+    types = ('<?xml version="1.0"?><Types xmlns="t"><Default Extension="jpeg" ContentType="image/jpeg"/>'
+             '<Override PartName="/docProps/thumbnail.jpeg" ContentType="image/jpeg"/></Types>')
+    with zipfile.ZipFile(src, "w") as z:
+        z.writestr("[Content_Types].xml", types)
+        z.writestr("_rels/.rels", rels)
+        z.writestr("docProps/thumbnail.jpeg", b"\xff\xd8\xff")
+    dst = tmp_path / "out.zip"
+    with zipfile.ZipFile(src) as zin:
+        office_xml.write_copy(zin, dst, {})
+    with zipfile.ZipFile(dst) as z:
+        assert "docProps/thumbnail.jpeg" not in z.namelist()
+        assert b"thumbnail" not in z.read("_rels/.rels")
+        assert b"thumbnail" not in z.read("[Content_Types].xml")
+        assert b"officeDocument" in z.read("_rels/.rels")

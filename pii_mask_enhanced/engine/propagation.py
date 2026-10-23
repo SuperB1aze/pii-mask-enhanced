@@ -120,9 +120,12 @@ def person_token_repeats(text: str, known: list[Entity]) -> list[Entity]:
                 tokens.add(tok)
     out = []
     for tok in tokens:
-        for m in _free_matches(rf"(?<![\w-]){re.escape(tok)}(?![\w-])", text, known):
-            out.append(Entity("PERSON", tok, m.start(), m.end(),
-                              tok.lower(), source=sources.PERSON_TOKEN))
+        # фамилия - в любом падеже: "Продублируй Соколову" после "Дмитрий Соколов"
+        forms = sorted({tok} | {f.capitalize() for f in morph.surname_lexeme(tok)}, key=len, reverse=True)
+        pattern = rf"(?<![\w-])(?:{'|'.join(map(re.escape, forms))})(?![\w-])"
+        for m in _free_matches(pattern, text, known):
+            out.append(Entity("PERSON", m.group(), m.start(), m.end(),
+                              m.group().lower(), source=sources.PERSON_TOKEN))
     return out
 
 
@@ -210,7 +213,7 @@ _AFTER = {
 
 def _labelled_details(text: str, known: list[Entity]) -> list[Entity]:
     """
-    В анкете "Дата выдачи" и "Выдан:" - отдельные поля. 
+    В анкете "Дата выдачи" и "Выдан:" - отдельные поля.
     "Кем выдан" и код подразделения однозначны и без паспорта - они в registry/labelled_values.
     """
     anchors = {e.type for e in known}

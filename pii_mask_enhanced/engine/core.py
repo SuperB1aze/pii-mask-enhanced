@@ -3,7 +3,7 @@
 Принципы:
 - распознаватели только находят сущности, замену делает детерминированный код;
 - одинаковая сущность (включая словоформы) -> одна метка на весь диалог;
-- mapping возвращается вызывающему, сервис ничего не хранит;
+- mapping возвращается вызывающему, библиотека ничего не хранит;
 - метка, которой не было во входе, при unmask превращается в UNKNOWN - защита
   от выдуманных моделью данных.
 
@@ -15,6 +15,7 @@ from __future__ import annotations
 import copy
 import re
 
+from ..audit.base import Auditor, to_entities
 from ..detection.ner import morph
 from ..detection.ner.ner import NatashaNer
 from ..detection.recognizers.entity import Entity
@@ -54,8 +55,11 @@ class Masker:
         supported_names: tuple[str, ...] = (),
         inn_needs_label: bool = False,
         trusted_numbers: frozenset[str] = frozenset(),
+        auditor: Auditor | None = None,
     ):
         check_types(types)
+        # третий слой: второй проход по уже замаскированному тексту (mask_with_audit)
+        self.auditor = auditor
         check_types(ner_types or ())
         self.types = set(types)
         # Каким типам верить со стороны NER
@@ -174,8 +178,10 @@ class Masker:
         if "PERSON" in self.types:
             candidates += prop.person_token_repeats(text, candidates)
 
-        # номер, опознанный по якорному слову где угодно в тексте, скрывается везде
-        anchored = {e.text.strip() for e in candidates if e.source == sources.DOCREF}
+        # номер, опознанный по якорному слову где угодно в тексте, скрывается везде. Дата -
+        # нет: "договор от 15.09.2026" не делает той же датой приказа данные о договоре
+        anchored = {e.text.strip() for e in candidates
+                    if e.source == sources.DOCREF and e.type != "DATE"}
         anchored |= {e.text.strip() for e in candidates
                      if e.type in SPREAD_TYPES and e.source == sources.REQUISITE}
         if anchored:
@@ -243,16 +249,13 @@ class Masker:
         return "".join(out)
 
     def mask_with_audit(self, text: str, mapping: dict | None = None) -> tuple[str, dict]:
-        # mask + второй проход локальной LLM по уже замаскированному тексту.
-        from ..detection.auditor import audit, ollama_alive
-
-        if not ollama_alive():
-            raise RuntimeError(
-                "запрошен --audit, но Ollama недоступна (PII_MASK_OLLAMA_URL); "
-                "маскировка без аудита не выполнена намеренно"
-            )
+        # mask + второй проход аудитора по уже замаскированному тексту.
+        if self.auditor is None:
+            raise ValueError("аудит запрошен, но аудитор не задан: Masker(auditor=...)")
+        if not self.auditor.available():
+            raise RuntimeError("аудитор недоступен - маскировка без аудита не выполнена намеренно")
         masked, mapping = self.mask(text, mapping)
-        extras = audit(masked)
+        extras = to_entities(masked, self.auditor.find(masked))
         if extras:
             masked, mapping = self.mask(masked, mapping, extra_entities=extras)
         return masked, mapping

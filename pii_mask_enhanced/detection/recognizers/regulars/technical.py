@@ -97,10 +97,12 @@ DOMAIN_LOGIN_RE = re.compile(r"(?<![\w\\:])[A-Z][A-Z0-9-]{1,14}\\[A-Za-z][\w.-]{
 
 # Внутренняя сеть
 _HOST_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
-INTERNAL_HOST_RE = re.compile(
-    rf"(?<![\w.@-])(?=[\w-]*[a-z])(?:{_HOST_LABEL}\.)+(?:local|localdomain|corp|lan|internal|intra|intranet"
-    r"|home\.arpa)(?![\w.-])",
-    re.IGNORECASE)
+_INTERNAL_HOST = (rf"(?=[\w-]*[a-z])(?:{_HOST_LABEL}\.)+(?:local|localdomain|corp|lan|internal|intra"
+                  r"|intranet|home\.arpa)(?![\w.-])")
+# после "@" хост не берем: user@corp.local - почта, ее находит распознаватель почты
+INTERNAL_HOST_RE = re.compile(rf"(?<![\w.@-]){_INTERNAL_HOST}", re.IGNORECASE)
+# хост после учетных данных в адресе: postgresql://user:pass@db.corp.local:5432
+CREDENTIALS_HOST_RE = re.compile(rf"://[^\s/@]+@({_INTERNAL_HOST})", re.IGNORECASE)
 UNC_PATH_RE = re.compile(
     r"(?<![\w\\])\\\\[A-Za-z0-9][\w.-]{0,62}"
     r"(?:\\[^\\\n/:*?\"<>|,;]+(?=\\)|\\[^\\\s/:*?\"<>|,;]+)+")

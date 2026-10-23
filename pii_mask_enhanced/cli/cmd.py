@@ -3,22 +3,25 @@ from __future__ import annotations
 
 import argparse
 import functools
+import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
 from typing import Callable, NamedTuple
 
-from ...detection import presets
-from ...detection.registry.entity_types import BY_NAME
+from ..audit import OllamaAuditor
+from ..config import load_section
+from ..detection import presets
+from ..detection.registry.entity_types import BY_NAME
 
-from ...engine.core import Masker
-from ...engine.settings import Options, build_masker, type_names
+from ..engine.core import Masker
+from ..engine.settings import Options, build_masker, type_names
 
 from .file_ops import FileOperations as ops
 
-from ...formats import excel, powerpoint, word
-from ...formats.common.legacy import ConvertError
+from ..formats import excel, powerpoint, word
+from ..formats.common.legacy import ConvertError
 
 
 class _Office(NamedTuple):
@@ -84,12 +87,15 @@ class CMD:
                                    "аудитор работает по тексту")
                 if out is None or out == "-":
                     raise CliError("файл этого формата нельзя писать в stdout - укажи -o файл")
-                mapping = _OFFICE[kind].mask(args.file, out, masker, mapping)
+                try:
+                    mapping = _OFFICE[kind].mask(args.file, out, masker, mapping)
+                except ValueError as exc:   # в файле есть то, что не удается обезличить
+                    raise CliError(str(exc)) from exc
             else:
                 if kind == ".pdf":
                     # PDF читаем текстом и текстом же отдаем: собрать PDF обратно нельзя,
                     # замена другой длины ломает верстку строки (см. pii_mask_enhanced/formats/pdf/pdf.py).
-                    from ...formats.pdf import PdfError, extract_text
+                    from ..formats.pdf import PdfError, extract_text
 
                     try:
                         text = extract_text(args.file)
@@ -98,7 +104,10 @@ class CMD:
                 else:
                     text = source()
                 mask = masker.mask_with_audit if args.audit else masker.mask
-                masked, mapping = mask(text, mapping)
+                try:
+                    masked, mapping = mask(text, mapping)
+                except RuntimeError as exc:     # аудитор недоступен - fail-closed
+                    raise CliError(str(exc)) from exc
                 ops.write(out, masked)
         except CliError as exc:
             print(exc, file=sys.stderr)
@@ -122,8 +131,9 @@ class CMD:
         CMD._check_paths((out, args.file, "результат и исходный файл"),
                          (mapping_path, args.file, "реестр и исходный файл"))
         to_old = Path(out).suffix.lower() == kind
+        soffice = CMD._soffice(args)
         try:
-            with fmt.as_new(src_path) as converted, \
+            with fmt.as_new(src_path, soffice) as converted, \
                     tempfile.TemporaryDirectory(prefix="pii-legacy-") as tmp:
                 if converted.suffix.lower() != fmt.new:
                     converted = Path(shutil.copyfile(converted, Path(tmp) / f"source{fmt.new}"))
@@ -132,10 +142,34 @@ class CMD:
                                               "output": new_out, "mapping": mapping_path})
                 code = CMD.cmd_mask(inner)
                 if code == 0 and to_old:
-                    fmt.save_as_old(new_out, out)
+                    fmt.save_as_old(new_out, out, soffice)
                 return code
         except ConvertError as exc:
             raise CliError(str(exc)) from exc
+
+    @staticmethod
+    def _settings(args: argparse.Namespace, section: str, env: dict[str, str]) -> dict:
+        # Секция файла настроек, поверх нее - переменные окружения (env: ключ -> имя переменной).
+        try:
+            values = load_section(section, getattr(args, "config", None))
+        except (FileNotFoundError, ValueError) as exc:
+            raise CliError(str(exc)) from exc
+        values.update({key: os.environ[var] for key, var in env.items() if os.environ.get(var)})
+        return values
+
+    @staticmethod
+    def _soffice(args: argparse.Namespace) -> str | None:
+        return CMD._settings(args, "convert", {"soffice": "PII_MASK_SOFFICE"}).get("soffice")
+
+    @staticmethod
+    def _auditor(args: argparse.Namespace) -> OllamaAuditor:
+        values = CMD._settings(args, "audit", {"url": "PII_MASK_OLLAMA_URL",
+                                               "model": "PII_MASK_AUDITOR_MODEL",
+                                               "keep_alive": "PII_MASK_KEEP_ALIVE"})
+        try:
+            return OllamaAuditor(**values)
+        except TypeError as exc:
+            raise CliError(f"в секции [audit] неизвестная настройка: {exc}") from exc
 
     @staticmethod
     def _check_paths(*pairs: tuple[str | None, str | None, str]) -> None:
@@ -151,7 +185,7 @@ class CMD:
         # Настройки Masker из флагов и пресета. probe() - текст документа или None.
         org_names = ()
         if getattr(args, "org_dict", None):
-            from ...detection.recognizers.recognizers import load_org_dict
+            from ..detection.recognizers.recognizers import load_org_dict
 
             org_names = load_org_dict(args.org_dict)
         supported_names = ()
@@ -172,8 +206,9 @@ class CMD:
             org_names=org_names,
             supported_names=supported_names,
         )
+        auditor = CMD._auditor(args) if getattr(args, "audit", False) else None
         try:
-            masker, notes = build_masker(opts, probe)
+            masker, notes = build_masker(opts, probe, auditor)
         except ValueError as exc:
             raise CliError(str(exc)) from exc
         for note in notes:
@@ -236,31 +271,23 @@ class CMD:
             print(f"результат и исходный файл - один и тот же путь ({out})", file=sys.stderr)
             return 2
         try:
-            with fmt.as_new(src_path) as converted, \
+            soffice = CMD._soffice(args)
+            with fmt.as_new(src_path, soffice) as converted, \
                     tempfile.TemporaryDirectory(prefix="pii-legacy-") as tmp:
                 restored = Path(tmp) / f"restored{fmt.new}"
                 _OFFICE[fmt.new].unmask(converted, restored, mapping)
                 if Path(out).suffix.lower() == kind:
-                    fmt.save_as_old(restored, out)
+                    fmt.save_as_old(restored, out, soffice)
                 else:
                     shutil.copyfile(restored, out)
-        except (ConvertError, ValueError) as exc:
+        except (ConvertError, ValueError, CliError) as exc:
             print(exc, file=sys.stderr)
             return 2
         print(f"восстановлено: {out}", file=sys.stderr)
         return 0
 
     @staticmethod
-    def cmd_serve(args: argparse.Namespace) -> int:
-        import uvicorn
-
-        from ..api.api import app
-
-        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
-        return 0
-
-    @staticmethod
-    def cmd_presets(args: argparse.Namespace) -> int:
+    def cmd_presets(_args: argparse.Namespace) -> int:
         for name in presets.names():
             preset = presets.get(name)
             print(f"{name} - {preset.title}")
@@ -273,12 +300,4 @@ class CMD:
             print(f"  должность и специальность: {'оставить' if preset.keep_positions else 'скрыть'}")
             print(f"  остаток по счету и долг: {'оставить' if preset.keep_balances else 'скрыть'}")
         print(f"{presets.AUTO} - выбрать набор по профилю документа")
-        return 0
-
-    @staticmethod
-    def cmd_where(args: argparse.Namespace) -> int:
-        # путь импортированного модуля
-        import pii_mask_enhanced
-
-        print(pii_mask_enhanced.__file__)
         return 0

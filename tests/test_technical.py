@@ -191,6 +191,9 @@ def test_technical_lookalikes_untouched(src):
      "файл лежит в {{URL_1}}, см."),
     (r"\\10.0.5.1\backup", "{{URL_1}}"),
     (r"путь \\FS01\Docs\2024", "путь {{URL_1}}"),
+    # хост после логина и пароля в адресе подключения
+    ("postgresql://app:pw@db.corp.local:5432/main",
+     "postgresql://{{PERSON_ID_1}}:{{SECRET_1}}@{{URL_1}}:5432/main"),
 ])
 def test_internal_host_and_unc_path(src, expected):
     assert _mask(src) == expected

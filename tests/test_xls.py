@@ -25,7 +25,7 @@ def fake_converter(monkeypatch, tmp_path):
     template = _book(tmp_path / "tpl", ["Почта sokolova@example.ru"])
     seen = {}
 
-    def convert(src, outdir, fmt="xlsx"):
+    def convert(src, outdir, fmt="xlsx", soffice=None):
         if fmt == "xls":
             seen["to_xls"] = cell_texts(src)
             return _ole(outdir / f"{src.stem}.xls")
@@ -65,7 +65,7 @@ def test_not_an_excel_file_is_an_error(tmp_path):
 
 
 def test_missing_converter_is_named(tmp_path, monkeypatch):
-    monkeypatch.setattr(legacy, "find_soffice", lambda: None)
+    monkeypatch.setattr(legacy, "find_soffice", lambda path=None: None)
     monkeypatch.setattr(legacy, "pywin32_available", lambda: False)
     with pytest.raises(ConvertError, match="LibreOffice"):
         with XLS.as_new(_ole(tmp_path / "a.xls")):

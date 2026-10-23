@@ -223,15 +223,133 @@ def test_unknown_text_part_refuses_instead_of_leaking(tmp_path):
     from pii_mask_enhanced.engine.core import Masker
 
     path = tmp_path / "draw.xlsx"
-    drawing = ('<?xml version="1.0"?><xdr:wsDr xmlns:xdr="x" xmlns:a="y">'
-               '<a:p><a:r><a:t>ООО «Ромашка»</a:t></a:r></a:p></xdr:wsDr>')
+    unknown = ('<?xml version="1.0"?><x:custom xmlns:x="x" xmlns:a="y">'
+               '<a:p><a:r><a:t>ООО «Ромашка»</a:t></a:r></a:p></x:custom>')
     with zipfile.ZipFile(path, "w") as z:
         z.writestr("[Content_Types].xml", CONTENT_TYPES)
         z.writestr("xl/sharedStrings.xml",
                    '<?xml version="1.0"?><sst><si><t>Итого</t></si></sst>')
-        z.writestr("xl/drawings/drawing1.xml", drawing)
-    with pytest.raises(ValueError, match="drawing"):
+        z.writestr("xl/custom/item1.xml", unknown)
+    with pytest.raises(ValueError, match="custom"):
         xlsx.mask_workbook(path, tmp_path / "o.xlsx", Masker(types=("ORG",), ner=False))
+
+
+def _book_with(tmp_path, parts: dict[str, str], shared=("Итого",), workbook=WORKBOOK):
+    """Книга _book с дополнительными частями и своим workbook.xml."""
+    src = _book(tmp_path, list(shared))
+    out = tmp_path / "extra.xlsx"
+    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(out, "w") as zout:
+        for info in zin.infolist():
+            blob = workbook.encode("utf-8") if info.filename == "xl/workbook.xml" else zin.read(info)
+            zout.writestr(info, blob)
+        for name, blob in parts.items():
+            zout.writestr(name, blob)
+    return out
+
+
+def _part_text(path, name: str) -> str:
+    return zipfile.ZipFile(path).read(name).decode("utf-8")
+
+
+def test_shape_text_is_masked(tmp_path):
+    """Надпись на листе - абзац DrawingML; замещающий текст картинки - тоже."""
+    from pii_mask_enhanced.engine.core import Masker
+
+    drawing = ('<?xml version="1.0"?><xdr:wsDr xmlns:xdr="x" xmlns:a="y"><xdr:sp><xdr:nvSpPr>'
+               '<xdr:cNvPr id="2" name="Надпись 1" descr="Логотип ООО «Лютик»"/></xdr:nvSpPr>'
+               "<xdr:txBody><a:p><a:r><a:t>Подготовил ООО «Ромашка»</a:t></a:r></a:p></xdr:txBody>"
+               "</xdr:sp></xdr:wsDr>")
+    src = _book_with(tmp_path, {"xl/drawings/drawing1.xml": drawing})
+    dst = tmp_path / "o.xlsx"
+    mapping = xlsx.mask_workbook(src, dst, Masker(types=("ORG",), ner=False))
+    body = _part_text(dst, "xl/drawings/drawing1.xml")
+    assert "Ромашка" not in body and "Лютик" not in body
+    restored = tmp_path / "r.xlsx"
+    xlsx.unmask_workbook(dst, restored, mapping)
+    assert xlsx.cell_texts(restored) == xlsx.cell_texts(src)
+
+
+def test_chart_cache_is_masked_like_cells(tmp_path):
+    from pii_mask_enhanced.engine.core import Masker
+
+    chart = ('<?xml version="1.0"?><c:chartSpace xmlns:c="c"><c:chart><c:ser><c:cat><c:strRef>'
+             '<c:f>Лист1!$A$1</c:f><c:strCache><c:pt idx="0"><c:v>ООО «Ромашка»</c:v></c:pt>'
+             "</c:strCache></c:strRef></c:cat></c:ser></c:chart></c:chartSpace>")
+    src = _book_with(tmp_path, {"xl/charts/chart1.xml": chart}, shared=("ООО «Ромашка»",))
+    dst = tmp_path / "o.xlsx"
+    xlsx.mask_workbook(src, dst, Masker(types=("ORG",), ner=False))
+    assert "<c:v>{{ORG_1}}</c:v>" in _part_text(dst, "xl/charts/chart1.xml")
+    assert xlsx.cell_texts(dst)[0] == "{{ORG_1}}", "ячейка и кэш диаграммы - одна метка"
+
+
+def test_pivot_cache_is_masked(tmp_path):
+    """Кэш сводной таблицы хранит копию исходных строк в атрибутах."""
+    from pii_mask_enhanced.engine.core import Masker
+
+    definition = ('<?xml version="1.0"?><pivotCacheDefinition refreshedBy="Соколова Анна">'
+                  '<cacheSource type="worksheet">'
+                  '<worksheetSource ref="A1:B3" sheet="Лист1"/></cacheSource><cacheFields>'
+                  '<cacheField name="Почта"><sharedItems><s v="sokolova@example.ru"/></sharedItems>'
+                  "</cacheField></cacheFields></pivotCacheDefinition>")
+    records = ('<?xml version="1.0"?><pivotCacheRecords><r><x v="0"/><s v="ivanov@example.ru"/>'
+               '<n v="1500"/></r></pivotCacheRecords>')
+    src = _book_with(tmp_path, {"xl/pivotCache/pivotCacheDefinition1.xml": definition,
+                                 "xl/pivotCache/pivotCacheRecords1.xml": records})
+    dst = tmp_path / "o.xlsx"
+    xlsx.mask_workbook(src, dst, Masker(types=("EMAIL",), ner=False))
+    body = (_part_text(dst, "xl/pivotCache/pivotCacheDefinition1.xml")
+            + _part_text(dst, "xl/pivotCache/pivotCacheRecords1.xml"))
+    assert "sokolova@" not in body and "ivanov@" not in body
+    assert '<x v="0"/>' in body and '<n v="1500"/>' in body and 'name="Почта"' in body
+    assert 'refreshedBy=""' in body, "кто обновлял сводную - след автора"
+
+
+def test_saved_path_and_share_user_are_cleared(tmp_path):
+    """Путь, где книгу сохраняли, содержит имя пользователя Windows."""
+    from pii_mask_enhanced.engine.core import Masker
+
+    workbook = WORKBOOK.replace(
+        "<sheets>", '<fileSharing userName="Соколова Анна"/><x15ac:absPath xmlns:x15ac="x" '
+                    'url="C:\\Users\\sokolova\\Documents\\"/><sheets>')
+    src = _book_with(tmp_path, {}, workbook=workbook)
+    dst = tmp_path / "o.xlsx"
+    xlsx.mask_workbook(src, dst, Masker(types=("PERSON",), ner=False))
+    body = _part_text(dst, "xl/workbook.xml")
+    assert "sokolova" not in body and "Соколова" not in body
+    assert 'url=""' in body and 'userName=""' in body
+
+
+def test_sheet_name_with_pii_is_renamed_with_references(tmp_path):
+    """Лист "ООО «Ромашка»" - имя маскируется, ссылки на лист в формулах и диаграммах тоже."""
+    from pii_mask_enhanced.engine.core import Masker
+
+    workbook = WORKBOOK.replace('name="Лист1"', 'name="ООО «Ромашка»"').replace(
+        "</workbook>", "<definedNames><definedName name=\"итог\">'ООО «Ромашка»'!$A$1"
+                       "</definedName></definedNames></workbook>")
+    chart = ('<?xml version="1.0"?><c:chartSpace xmlns:c="c"><c:chart><c:ser><c:val><c:numRef>'
+             "<c:f>'ООО «Ромашка»'!$C$1</c:f></c:numRef></c:val></c:ser></c:chart></c:chartSpace>")
+    src = _book_with(tmp_path, {"xl/charts/chart1.xml": chart}, workbook=workbook)
+    dst = tmp_path / "o.xlsx"
+    mapping = xlsx.mask_workbook(src, dst, Masker(types=("ORG",), ner=False))
+    assert xlsx.sheet_names(dst) == ["{{ORG_1}}"]
+    assert "'{{ORG_1}}'!$A$1</definedName>" in _part_text(dst, "xl/workbook.xml")
+    assert "<c:f>'{{ORG_1}}'!$C$1</c:f>" in _part_text(dst, "xl/charts/chart1.xml")
+
+    restored = tmp_path / "r.xlsx"
+    xlsx.unmask_workbook(dst, restored, mapping)
+    assert xlsx.sheet_names(restored) == ["ООО «Ромашка»"]
+    assert "<c:f>'ООО «Ромашка»'!$C$1</c:f>" in _part_text(restored, "xl/charts/chart1.xml")
+
+
+def test_plain_sheet_reference_is_renamed():
+    out = xlsx._rename_sheets(b"<f>SUM(Petrov!A1:A3)+Petrov2!B1</f>", {"Petrov": "{{PERSON_1}}"})
+    assert out == b"<f>SUM('{{PERSON_1}}'!A1:A3)+Petrov2!B1</f>"
+
+
+def test_long_masked_sheet_name_becomes_neutral():
+    names = ["Отчет", "Ромашка"]
+    assert xlsx._new_sheet_names(names, ["Отчет", "{{ORG_1}} и еще очень длинное продолжение"]) == {
+        "Ромашка": "Лист2"}
 
 
 def test_comment_text_and_author_are_masked(tmp_path):

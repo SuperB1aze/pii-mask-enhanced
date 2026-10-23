@@ -43,12 +43,16 @@ def assign_label(labels: dict, ent: Entity) -> str:
         ):
             return placeholder
 
-    # одиночное имя линкуем к единственному полному ФИО с этим токеном
+    # одиночное имя линкуем к единственному полному ФИО с этим токеном; фамилию - в
+    # любом падеже и роде: "Сухаревой" после "Сухарева Алина Петровна"
     if ent.type == "PERSON" and " " not in ent.key:
+        from ..detection.ner import morph
+
+        forms = morph.surname_forms(ent.key)
         hosts = [
             (placeholder, rec)
             for placeholder, rec in labels.items()
-            if rec["type"] == "PERSON" and " " in rec["key"] and ent.key in rec["key"].split()
+            if rec["type"] == "PERSON" and " " in rec["key"] and forms & set(rec["key"].split())
         ]
         if len(hosts) == 1:
             placeholder, rec = hosts[0]

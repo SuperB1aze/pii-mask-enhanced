@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 
+from ...ner import morph
 from ...registry import sources
 from .. import helpers
 from .. import regulars as regs
@@ -55,6 +56,8 @@ def orgs(text: str, org_names: tuple[str, ...]) -> list[Entity]:
         name = m.group(1)
         if _json_field(text, m) and regs.LATIN_VALUE_RE.fullmatch(name):
             continue
+        if morph.is_party_role(name):
+            continue        # «Заказчик», «Исполнитель» - роль стороны договора, а не название
         if len(name) >= 3 and not inside(m.start(1), m.end(1), [(e.start, e.end) for e in out]):
             out.append(from_match("ORG", m, 1, key=str.lower))
 

@@ -72,23 +72,38 @@ class NatashaNer:
     _RIGHT_WORD = re.compile(r"^[ \t]+([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?)")
 
     def _surname_by_patronymic(self, text: str, found: list[Entity]) -> list[Entity]:
-        # дотянуть спан ФИО до соседней фамилии, когда в нем есть отчество.
+        # Дотянуть спан ФИО до соседней фамилии, когда в нем есть отчество. Ключ - из
+        # нормальной формы имени и фамилии в именительном падеже: "Белоусовой Марины
+        # Сергеевны" и "Белоусова Марина Сергеевна" - одно лицо и одна метка.
         out = []
         for ent in found:
             if ent.type != "PERSON" or not self._has_patronymic(ent.text):
                 continue
+            female = morph.is_female_patronymic(ent.text)
             left = self._LEFT_WORD.search(text[:ent.start])
             if left and self._looks_like_surname(left.group(1)):
+                surname = morph.surname_nominative(left.group(1), female)
                 out.append(Entity("PERSON", text[left.start(1):ent.end],
-                                  left.start(1), ent.end,
-                                  text[left.start(1):ent.end].lower()))
+                                  left.start(1), ent.end, f"{surname} {ent.key}"))
                 continue
             right = self._RIGHT_WORD.match(text[ent.end:])
             if right and self._looks_like_surname(right.group(1)):
                 end = ent.end + right.end(1)
+                surname = morph.surname_nominative(right.group(1), female)
                 out.append(Entity("PERSON", text[ent.start:end],
-                                  ent.start, end, text[ent.start:end].lower()))
+                                  ent.start, end, f"{ent.key} {surname}"))
         return out
+
+    @classmethod
+    def _person_key(cls, raw: str, key: str) -> str:
+        # NER склоняет несклоняемую фамилию как прилагательное ("Черных" -> "черные"):
+        # в ФИО с отчеством слово, которое не имя и не отчество, приводим как фамилию
+        words, keys = raw.split(), key.split()
+        if len(words) < 2 or len(words) != len(keys) or not cls._has_patronymic(raw):
+            return key
+        female = morph.is_female_patronymic(raw)
+        return " ".join(k if morph.is_name_part(w) else morph.surname_nominative(w, female)
+                        for w, k in zip(words, keys))
 
     @staticmethod
     def _has_patronymic(span: str) -> bool:
@@ -148,6 +163,8 @@ class NatashaNer:
             return False
         if ent.type == "ORG" and helpers.BARE_LEGAL_FORM.match(ent.text):
             return False
+        if ent.type == "ORG" and (morph.is_party_role(ent.text) or morph.is_generic_unit(ent.text)):
+            return False
         if ent.type == "PERSON":
             tokens = ent.text.split()
             if len(tokens) == 1:
@@ -199,6 +216,8 @@ class NatashaNer:
             oblique = bool(cases) and "Nom" not in cases
             # текст берется из ориганала
             raw = text[span.start:stop]
+            if etype == "PERSON":
+                key = self._person_key(raw, key)
             out.append(
                 Entity(etype, raw, span.start, stop, key, oblique)
             )

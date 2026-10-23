@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import zipfile
 
+from ..common import drawingml
 from ..common.office_xml import clear_attrs, escape
 from ..common.package import Node, Package, rels_units
 
@@ -15,6 +16,8 @@ _TOKEN_RE = re.compile(
     rb"(?:/>|(?<!/)>(?P<text>.*?)</(?P=name)>)"
     # короткая запись поля: код в атрибуте, <w:fldSimple w:instr=" HYPERLINK ...">
     rb"|<(?:\w+:)?fldSimple\s[^>]*?(?:\w+:)?instr=(?P<q>[\"'])(?P<instr>.*?)(?P=q)"
+    # свойства картинки и фигуры: в них замещающий текст
+    rb"|<(?:\w+:)?(?:docPr|cNvPr)\s(?P<alt>[^>]*)>"
     rb"|(?P<p_open><(?:\w+:)?p(?:\s[^>]*)?(?<!/)>)"
     rb"|(?P<p_close></(?:\w+:)?p>)"
     rb"|(?P<fld><(?:\w+:)?fldChar[\s/>])"      # граница поля: коды разных полей не склеиваем
@@ -29,6 +32,10 @@ _TEXT_PARTS = re.compile(
     r"^word/(document\.xml|header\d*\.xml|footer\d*\.xml"
     r"|footnotes\.xml|endnotes\.xml|comments\.xml)$"
 )
+# SmartArt: данные и готовая отрисовка; текст в них - абзацы DrawingML
+_DRAWING_PARTS = re.compile(r"^word/diagrams/(?:data|drawing)\d+\.xml$")
+# диаграммы, в том числе нового типа (chartEx)
+_CHART_PARTS = re.compile(r"^word/charts/chart(?:Ex)?\d+\.xml$")
 
 # разметка, стили, связи, нумерация
 _NO_TEXT = re.compile(
@@ -65,6 +72,8 @@ def _text_units(blob: bytes) -> list[list[Node]]:
         elif m.group("del_close"):
             if stack:
                 stack[-1][1].pop(b"delText", None)
+        elif m.group("alt") is not None:
+            paragraphs.append(drawingml.alt_units(m.group("alt"), m.start("alt")))
         elif not stack:
             if (m.group("text") or m.group("instr") or b"").strip():
                 raise ValueError("в документе есть текст вне абзаца - "
@@ -87,13 +96,16 @@ def _parts(z: zipfile.ZipFile) -> list[tuple[str, str]]:
     names = z.namelist()
     text = sorted((n for n in names if _TEXT_PARTS.match(n)),
                   key=lambda n: (n != "word/document.xml", n))
+    drawings = sorted(n for n in names if _DRAWING_PARTS.match(n))
+    charts = sorted(n for n in names if _CHART_PARTS.match(n))
     rels = sorted(n for n in names if n.endswith(".rels"))
-    return [(n, "text") for n in text] + [(n, "rels") for n in rels]
+    return ([(n, "text") for n in text] + [(n, "drawing") for n in drawings]
+            + [(n, "chart") for n in charts] + [(n, "rels") for n in rels])
 
 
 def _render(node: Node, text: str) -> bytes:
-    if node.name is None:
-        return escape(text, attr=True).encode("utf-8")
+    if node.name is None or not node.name.startswith(b"w:"):
+        return drawingml.render(node, text)     # атрибут или узел DrawingML (<a:t>)
     payload = escape(text).encode("utf-8")
     return b"<" + node.name + b' xml:space="preserve">' + payload + b"</" + node.name + b">"
 
@@ -108,7 +120,8 @@ def _finish(zin: zipfile.ZipFile, done: dict[str, bytes]) -> None:
                 done[name] = cleared
 
 
-DOCX = Package("в документе", _parts, {"text": _text_units, "rels": rels_units},
+DOCX = Package("в документе", _parts, {"text": _text_units, "drawing": drawingml.text_units,
+                                       "chart": drawingml.chart_units, "rels": rels_units},
                _render, _NO_TEXT, _finish)
 
 paragraph_texts = DOCX.texts

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import glob
-import os
 import shutil
 import subprocess
 import sys
@@ -34,12 +33,12 @@ class ConvertError(Exception):
     """Понятная человеку причина, по которой файл не удалось сконвертировать."""
 
 
-def find_soffice() -> str | None:
-    configured = os.environ.get("PII_MASK_SOFFICE")
+def find_soffice(configured: str | Path | None = None) -> str | None:
+    # явно заданный путь обязан существовать; без него - автопоиск
     if configured:
         if not Path(configured).is_file():
-            raise ConvertError(f"PII_MASK_SOFFICE указывает на несуществующий файл: {configured}")
-        return configured
+            raise ConvertError(f"LibreOffice не найден по указанному пути: {configured}")
+        return str(configured)
     for name in ("soffice", "libreoffice"):
         found = shutil.which(name)
         if found:
@@ -105,9 +104,11 @@ class LegacyFormat:
             return self.old
         raise ConvertError(f"{path.name}: не похоже на {self.title} 97-2003 или {self.new}")
 
-    def convert(self, src: Path, outdir: Path, fmt: str | None = None) -> Path:
+    def convert(self, src: Path, outdir: Path, fmt: str | None = None,
+                soffice: str | Path | None = None) -> Path:
+        # soffice - путь к LibreOffice; без него - автопоиск, затем приложение Office
         fmt = fmt or self.new[1:]
-        soffice = find_soffice()
+        soffice = find_soffice(soffice)
         if soffice:
             return _via_libreoffice(soffice, src, outdir, fmt)
         if pywin32_available():
@@ -115,8 +116,8 @@ class LegacyFormat:
         if sys.platform == "win32":
             raise ConvertError(f"для {self.old} нужен LibreOffice или {self.app} с pywin32 "
                                f"(pip install .[word]); либо пересохраните файл в {self.new}")
-        raise ConvertError(f"для {self.old} нужен LibreOffice (soffice); путь к нему можно задать "
-                           f"в PII_MASK_SOFFICE, либо пересохраните файл в {self.new}")
+        raise ConvertError(f"для {self.old} нужен LibreOffice (soffice): установите его или укажите "
+                           f"путь к нему, либо пересохраните файл в {self.new}")
 
     def _check_new(self, path: Path) -> None:
         # конвертер может завершиться успешно и ничего не создать
@@ -127,7 +128,7 @@ class LegacyFormat:
                 raise ConvertError(f"результат конвертации не похож на {self.title}")
 
     @contextmanager
-    def as_new(self, src: str | Path) -> Iterator[Path]:
+    def as_new(self, src: str | Path, soffice: str | Path | None = None) -> Iterator[Path]:
         """Путь к версии файла в новом формате; промежуточные файлы удаляются при выходе.
 
         Промежуточный файл содержит незамаскированные ПД, поэтому живет только во
@@ -143,17 +144,17 @@ class LegacyFormat:
             # Конвертируем копию с простым именем
             work = tmp_dir / f"source{self.old}"
             shutil.copyfile(src, work)
-            dst = self.convert(work.resolve(), tmp_dir.resolve())
+            dst = self.convert(work.resolve(), tmp_dir.resolve(), soffice=soffice)
             self._check_new(dst)
             yield dst
 
-    def save_as_old(self, src: str | Path, dst: str | Path) -> None:
+    def save_as_old(self, src: str | Path, dst: str | Path, soffice: str | Path | None = None) -> None:
         """Сохранить файл нового формата в старом."""
         with tempfile.TemporaryDirectory(prefix=f"pii-{self.old[1:]}-") as tmp:
             tmp_dir = Path(tmp).resolve()
             work = tmp_dir / f"source{self.new}"
             shutil.copyfile(src, work)
-            out = self.convert(work, tmp_dir, self.old[1:])
+            out = self.convert(work, tmp_dir, self.old[1:], soffice=soffice)
             if not out.is_file() or self.sniff(out) != self.old:
                 raise ConvertError(f"конвертер не создал {self.old}")
             shutil.copyfile(out, dst)

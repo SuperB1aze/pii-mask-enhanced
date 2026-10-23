@@ -1,4 +1,4 @@
-"""CLI: pii-mask mask|unmask|serve.
+"""CLI: pii-mask mask|unmask.
 
 Пайплайн транскриптов:
     1. pii-mask mask встреча.md -> встреча.masked.md + встреча.mapping.json
@@ -10,9 +10,12 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ...detection import presets
-from ...engine.core import DEFAULT_TYPES
+from ..detection import presets
+from ..engine.core import DEFAULT_TYPES
 from .cmd import CMD
+
+_CONFIG_HELP = ("файл настроек (дефолт - pii-mask.toml в текущем каталоге или пользовательский "
+                "конфиг): [audit] url, model, timeout, keep_alive; [convert] soffice")
 
 
 def main() -> None:
@@ -55,6 +58,7 @@ def main() -> None:
     p.add_argument("--org-dict", dest="org_dict",
                    help="файл со списком названий организаций (по одному на строку); "
                         "нужен там, где у названия нет ни кавычек, ни орг-формы")
+    p.add_argument("--config", help=_CONFIG_HELP)
     p.set_defaults(func=CMD.cmd_mask)
 
     p = sub.add_parser("unmask", help="вернуть оригиналы в замаскированный файл или ответ модели")
@@ -63,22 +67,15 @@ def main() -> None:
     p.add_argument("-o", "--output",
                    help="дефолт: для текста - stdout, для .doc, .docx, .xls, .xlsx, .ppt и .pptx - "
                         "<stem>.unmasked.<расширение исходника>")
+    p.add_argument("--config", help=_CONFIG_HELP)
     p.set_defaults(func=CMD.cmd_unmask)
 
-    p = sub.add_parser("presets", help="какие наборы типов знает сервис")
+    p = sub.add_parser("presets", help="какие наборы типов знает библиотека")
     p.set_defaults(func=CMD.cmd_presets)
-
-    p = sub.add_parser("where", help="откуда работает код (путь импортированного модуля)")
-    p.set_defaults(func=CMD.cmd_where)
-
-    p = sub.add_parser("serve", help="поднять HTTP API (микросервис)")
-    p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--port", type=int, default=8377)
-    p.set_defaults(func=CMD.cmd_serve)
 
     args = parser.parse_args()
     sys.exit(args.func(args))
 
 
-if __name__ == "__main__":  # python -m pii_mask_enhanced.interfaces.cli.cli
+if __name__ == "__main__":  # python -m pii_mask_enhanced.cli.cli
     main()

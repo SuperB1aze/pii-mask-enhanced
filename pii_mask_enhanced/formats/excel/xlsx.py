@@ -6,9 +6,11 @@ import re
 import zipfile
 from pathlib import Path
 
+from ..common import drawingml
 from ..common.office_xml import (T_RE, cell_label, clear_attrs, counterparty_words, escape, is_label,
                          mask_values, runs_text, tag, unknown_text_parts, unescape,
                          unmask_values, write_copy)
+from ..common.package import Node, rewrite_units, unit_value
 
 # Контейнеры текстовых узлов <t>: ячейка общей таблицы, ячейка листа, комментарий.
 # Автор комментария хранится отдельным узлом, без <t>.
@@ -35,11 +37,29 @@ _PART_KINDS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"^xl/comments\d*\.xml$"), "author"),
     (re.compile(r"^xl/comments\d*\.xml$"), "text"),
     (re.compile(r"^xl/threadedComments/[^/]+\.xml$"), "tc"),
+    # фигуры и надписи, SmartArt, диаграммы, кэш сводных таблиц - разбор на единицы
+    (re.compile(r"^xl/(?:drawings/drawing\d+|diagrams/(?:data|drawing)\d+)\.xml$"), "drawing"),
+    (re.compile(r"^xl/charts/chart(?:Ex)?\d+\.xml$"), "chart"),
+    (re.compile(r"^xl/pivotCache/pivotCache(?:Definition|Records)\d+\.xml$"), "pivot"),
 )
 
-# Авторы примечаний: имя и учетная запись.
-_PERSONS = re.compile(r"^xl/persons/[^/]+\.xml$")
-_PERSON_ATTRS = ("displayName", "userId")
+# Кэш сводной таблицы - копия исходных строк: текстовое значение в атрибуте <s v="...">.
+_PIVOT_STRING_RE = re.compile(rb"""<(?:\w+:)?s\s[^>]*?\bv=(["'])(.*?)\1""", re.S)
+
+
+def _pivot_units(blob: bytes) -> list[list[Node]]:
+    return [[Node(m.start(2), m.end(2), m.group(2), None)] for m in _PIVOT_STRING_RE.finditer(blob)]
+
+
+_UNITS = {"drawing": drawingml.text_units, "chart": drawingml.chart_units, "pivot": _pivot_units}
+
+# Следы автора в атрибутах: кто писал примечания, где сохранялась книга (путь с именем
+# пользователя), кто защитил ее от записи, кто обновлял сводную таблицу.
+_AUTHOR_ATTRS = (
+    (re.compile(r"^xl/persons/[^/]+\.xml$"), ("displayName", "userId")),
+    (re.compile(r"^xl/workbook\.xml$"), ("url", "userName")),
+    (re.compile(r"^xl/pivotCache/pivotCacheDefinition\d+\.xml$"), ("refreshedBy",)),
+)
 
 # Части без пользовательского текста: разметка, оформление, связи.
 _NO_TEXT = re.compile(
@@ -85,6 +105,9 @@ def _kinds_and_values(path: str | Path) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     with zipfile.ZipFile(path) as z:
         for name, kind in _parts(z):
+            if kind in _UNITS:
+                out.extend((kind, unit_value(nodes)) for nodes in _UNITS[kind](z.read(name)))
+                continue
             for item in _ITEM_RE[kind].finditer(z.read(name)):
                 if kind == "num":
                     out.append((kind, _num_value(item)))
@@ -117,6 +140,8 @@ def _rewrite_part(blob: bytes, kind: str, values: list[str], cursor: int) -> tup
 
     if kind == "num":
         return _ITEM_RE["num"].sub(one_num, blob), cursor
+    if kind in _UNITS:
+        return rewrite_units(blob, _UNITS[kind](blob), values, cursor, drawingml.render)
 
     def one(match: re.Match) -> bytes:
         nonlocal cursor
@@ -154,10 +179,78 @@ def _rewrite_part(blob: bytes, kind: str, values: list[str], cursor: int) -> tup
     return _ITEM_RE[kind].sub(one, blob), cursor
 
 
-def rewrite(src: str | Path, dst: str | Path, values: list[str]) -> None:
+# Имя листа: атрибут в workbook.xml и ссылки на лист - в формулах, именованных диапазонах,
+# диаграммах (<c:f>) и источнике сводной таблицы.
+_WORKBOOK = "xl/workbook.xml"
+_SHEET_TAG_RE = re.compile(rb"""(<(?:\w+:)?sheet\s[^>]*?\bname=)(["'])(.*?)\2""", re.S)
+_FORMULA_RE = re.compile(
+    rb"(<(?P<tag>(?:\w+:)?(?:f|definedName))(?:\s[^>]*)?(?<!/)>)(.*?)(</(?P=tag)>)", re.S)
+_SOURCE_SHEET_RE = re.compile(rb"""(<(?:\w+:)?worksheetSource\s[^>]*?\bsheet=)(["'])(.*?)\2""", re.S)
+_SHEET_NAME_MAX = 31
+
+
+def sheet_names(path: str | Path) -> list[str]:
+    """Имена листов книги в порядке workbook.xml."""
+    with zipfile.ZipFile(path) as z:
+        if _WORKBOOK not in z.namelist():
+            return []
+        return [unescape(m.group(3).decode("utf-8")) for m in _SHEET_TAG_RE.finditer(z.read(_WORKBOOK))]
+
+
+def _sheet_ref_re(old: str) -> re.Pattern:
+    # 'Имя листа'!A1 (кавычка внутри имени удваивается) и, если имя простое, Имя!A1
+    alts = [re.escape("'" + old.replace("'", "''") + "'!")]
+    if re.fullmatch(r"[^\W\d][\w.]*", old):
+        alts.append(r"(?<![\w.'])" + re.escape(old) + "!")
+    return re.compile("|".join(alts))
+
+
+def _rename_sheets(blob: bytes, renames: dict[str, str]) -> bytes:
+    """Подставить новые имена листов в атрибуты и ссылки части."""
+    refs = [(_sheet_ref_re(old), "'" + new.replace("'", "''") + "'!") for old, new in renames.items()]
+
+    def formula(m: re.Match) -> bytes:
+        old = unescape(m.group(3).decode("utf-8"))
+        new = old
+        for rx, ref in refs:
+            new = rx.sub(lambda _: ref, new)
+        return m.group(0) if new == old else m.group(1) + escape(new).encode("utf-8") + m.group(4)
+
+    def attr(m: re.Match) -> bytes:
+        name = renames.get(unescape(m.group(3).decode("utf-8")))
+        if name is None:
+            return m.group(0)
+        return m.group(1) + m.group(2) + escape(name, attr=True).encode("utf-8") + m.group(2)
+
+    blob = _FORMULA_RE.sub(formula, blob)
+    blob = _SOURCE_SHEET_RE.sub(attr, blob)
+    return _SHEET_TAG_RE.sub(attr, blob)
+
+
+def _new_sheet_names(names: list[str], renamed: list[str]) -> dict[str, str]:
+    """Старое имя -> новое; имя после замены обязано остаться допустимым и уникальным."""
+    out: dict[str, str] = {}
+    used = set(names)
+    for i, (old, new) in enumerate(zip(names, renamed), 1):
+        if new == old:
+            continue
+        if len(new) > _SHEET_NAME_MAX:
+            new = f"Лист{i}"            # длинное имя Excel не примет: лучше безличное, чем исходное
+        base, n = new, 2
+        while new in used:
+            new = f"{base[:_SHEET_NAME_MAX - 4]} ({n})"
+            n += 1
+        used.add(new)
+        out[old] = new
+    return out
+
+
+def rewrite(src: str | Path, dst: str | Path, values: list[str],
+            renames: dict[str, str] | None = None) -> None:
     """Собрать копию книги с подставленными значениями.
 
     `values` - результат `cell_texts` для этой же книги, в том же порядке.
+    `renames` - новые имена листов: старое -> новое, вместе со ссылками на них.
     """
     src, dst = Path(src), Path(dst)
     if dst.exists() and src.samefile(dst):
@@ -178,8 +271,16 @@ def rewrite(src: str | Path, dst: str | Path, values: list[str]) -> None:
             blob, cursor = _rewrite_part(blob, kind, values, cursor)
             done[name] = blob
         for name in zin.namelist():
-            if _PERSONS.match(name):
-                done[name] = clear_attrs(zin.read(name), _PERSON_ATTRS)
+            attrs = [a for rx, names in _AUTHOR_ATTRS if rx.match(name) for a in names]
+            rename = bool(renames) and name.startswith("xl/") and name.endswith(".xml")
+            if not attrs and not rename:
+                continue
+            blob = done.get(name) or zin.read(name)
+            new = clear_attrs(blob, tuple(attrs)) if attrs else blob
+            if rename:
+                new = _rename_sheets(new, renames)
+            if new != blob:
+                done[name] = new
         write_copy(zin, dst, done)
 
 
@@ -278,7 +379,10 @@ def mask_workbook(src: str | Path, dst: str | Path, masker, mapping: dict | None
     for (kind, old), new in zip(pairs, masked):
         if kind == "num" and new != old and new in mapping["labels"]:
             mapping["labels"][new]["number"] = True
-    rewrite(src, dst, masked)
+    # имя листа бывает ФИО ("Соколова А.В.") - маскируется вместе со ссылками на лист
+    names = sheet_names(src)
+    renamed, mapping = mask_values(names, masker, mapping)
+    rewrite(src, dst, masked, _new_sheet_names(names, renamed))
     return mapping
 
 
@@ -326,7 +430,9 @@ def unmask_workbook(src: str | Path, dst: str | Path, mapping: dict) -> None:
         done = {name: _restore_numbers(zin.read(name), labels, shared)
                 for name in zin.namelist() if _SHEET_RE.match(name)}
         write_copy(zin, tmp, done)
+    names = sheet_names(src)
+    renames = {old: new for old, new in zip(names, unmask_values(names, mapping)) if new != old}
     try:
-        rewrite(tmp, dst, unmask_values(cell_texts(tmp), mapping))
+        rewrite(tmp, dst, unmask_values(cell_texts(tmp), mapping), renames)
     finally:
         tmp.unlink(missing_ok=True)

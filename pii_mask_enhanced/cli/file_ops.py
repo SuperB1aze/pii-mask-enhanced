@@ -6,8 +6,8 @@ import os
 import sys
 from pathlib import Path
 
-from ...formats import powerpoint, word
-from ...formats.pdf import extract_text
+from ..formats import powerpoint, word
+from ..formats.pdf import extract_text
 
 # текст документа одной строкой
 _READERS = {

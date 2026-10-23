@@ -106,7 +106,7 @@ def test_resolve_explains_the_choice():
 def run(args, cwd):
     # кодировку вывода задаем явно: иначе кириллица в выводе зависит от окружения,
     # в котором запущены тесты
-    return subprocess.run([sys.executable, "-m", "pii_mask_enhanced.interfaces.cli.cli", *args],
+    return subprocess.run([sys.executable, "-m", "pii_mask_enhanced.cli.cli", *args],
                           capture_output=True, text=True, cwd=cwd, encoding="utf-8",
                           env={**os.environ, "PYTHONIOENCODING": "utf-8"})
 

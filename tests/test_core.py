@@ -169,7 +169,7 @@ def test_fake_phone_survives_ten_thousand_labels():
 def test_cli_text_mask_keeps_extension(tmp_path, name, expected):
     import sys
 
-    from pii_mask_enhanced.interfaces.cli.cli import main
+    from pii_mask_enhanced.cli.cli import main
 
     src = tmp_path / name
     src.write_text("Телефон +7 916 555-12-34", encoding="utf-8")

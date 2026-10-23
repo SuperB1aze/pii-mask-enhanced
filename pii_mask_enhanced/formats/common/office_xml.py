@@ -32,6 +32,8 @@ _PROPERTY_FIELDS = {
                           "dc:description", "cp:keywords", "cp:category"),
     "docProps/app.xml": ("Company", "Manager"),
 }
+_TITLES_RE = re.compile(rb"<(?:\w+:)?TitlesOfParts>.*?</(?:\w+:)?TitlesOfParts>", re.S)
+_LPSTR_RE = re.compile(rb"(<(?:\w+:)?lpstr>)[^<]*(</(?:\w+:)?lpstr>)")
 
 # Правовые формы: по ним видно, кто в документе контрагент.
 _LEGAL_FORM = re.compile(rf"\b{CELL_FORM}\b", re.IGNORECASE)
@@ -99,6 +101,9 @@ def strip_properties(name: str, blob: bytes) -> bytes:
     for field in _PROPERTY_FIELDS.get(name, ()):
         blob = re.sub(rf"<{field}(\s[^>]*)?>[^<]*</{field}>".encode(),
                       rf"<{field}\1></{field}>".encode(), blob)
+    if name == "docProps/app.xml":
+        # заголовки частей - копия текста: заголовки слайдов, имена листов, название документа
+        blob = _TITLES_RE.sub(lambda m: _LPSTR_RE.sub(rb"\1\2", m.group(0)), blob)
     return blob
 
 
@@ -109,11 +114,25 @@ def clear_attrs(blob: bytes, names: tuple[str, ...]) -> bytes:
     return re.sub(rx, rb'\1""', blob)
 
 
+# Миниатюра первой страницы или слайда - картинка с исходным текстом. Замаскировать ее нельзя,
+# поэтому она убирается вместе со связью и записью о типе; Office открывает файл и без нее.
+_THUMBNAIL = re.compile(r"^docProps/thumbnail\.\w+$")
+_THUMBNAIL_REL_RE = re.compile(rb"<(?:\w+:)?Relationship\s[^>]*?/metadata/thumbnail[\"'][^>]*?/>")
+_THUMBNAIL_TYPE_RE = re.compile(rb"<(?:\w+:)?Override\s[^>]*?PartName=[\"']/docProps/thumbnail\.[^>]*?/>")
+
+
 def write_copy(zin: zipfile.ZipFile, dst: str | Path, done: dict[str, bytes]) -> None:
-    """Записать копию архива: части из `done` - новые, прочие - как были, свойства - без имен."""
+    """Записать копию архива: части из `done` - новые, прочие - как были, свойства - без имен,
+    миниатюры нет."""
     with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
         for info in zin.infolist():
+            if _THUMBNAIL.match(info.filename):
+                continue
             blob = done.get(info.filename) or zin.read(info.filename)
+            if info.filename == "_rels/.rels":
+                blob = _THUMBNAIL_REL_RE.sub(b"", blob)
+            elif info.filename == "[Content_Types].xml":
+                blob = _THUMBNAIL_TYPE_RE.sub(b"", blob)
             zout.writestr(info, strip_properties(info.filename, blob))
 
 

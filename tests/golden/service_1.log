@@ -1,0 +1,7 @@
+2026-10-01 09:14:02 INFO  auth: login ok user=o.chernykh email=o.chernykh@severveter-example.ru ip=203.0.113.47
+2026-10-01 09:14:05 INFO  api: GET /reports/17 status=200 duration=120ms
+2026-10-01 09:15:11 WARN  api: retry POST /export host=reports.severveter.local attempt=2
+2026-10-01 09:15:12 DEBUG http: Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJvLmNoZXJueWtoIn0.c2lnbmF0dXJlLWV4YW1wbGU
+2026-10-01 09:16:40 ERROR db: connection failed postgresql://report_user:S3cretPass@db.severveter.local:5432/reports
+2026-10-01 09:17:03 INFO  mail: sent to a.vorontsov@mail.example, phone +7 916 765-43-21
+2026-10-01 09:18:00 INFO  scheduler: job=nightly-export finished in 42s

@@ -107,15 +107,69 @@ def test_header_and_footer_are_masked(tmp_path):
 
 
 def test_unknown_text_part_refuses(tmp_path):
-    """Надпись или диаграмма, которую мы не разбираем, - отказ, а не пропуск."""
+    """Часть с текстом, которую мы не разбираем, - отказ, а не пропуск."""
     from pii_mask_enhanced.engine.core import Masker
 
-    drawing = ('<?xml version="1.0"?><wp:chart xmlns:wp="x" xmlns:a="y">'
-               '<a:t>ООО «Ромашка»</a:t></wp:chart>')
+    glossary = (f'<?xml version="1.0"?><w:glossaryDocument {NS}>'
+                "<w:p><w:r><w:t>ООО «Ромашка»</w:t></w:r></w:p></w:glossaryDocument>")
     src = _docx(tmp_path / "f.docx", [_para(["Товар"])],
-                extra={"word/charts/chart1.xml": drawing})
-    with pytest.raises(ValueError, match="chart"):
+                extra={"word/glossary/document.xml": glossary})
+    with pytest.raises(ValueError, match="glossary"):
         docx.mask_document(src, tmp_path / "o.docx", Masker(types=("ORG",)))
+
+
+A_NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+C_NS = 'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"'
+
+
+def test_chart_title_and_cache_are_masked(tmp_path):
+    """Диаграмма: заголовок - абзац, подписи категорий - копия ячеек в кэше."""
+    from pii_mask_enhanced.engine.core import Masker
+
+    chart = (f'<?xml version="1.0"?><c:chartSpace {C_NS} {A_NS}><c:chart><c:title><c:tx><c:rich>'
+             "<a:p><a:r><a:t>Продажи ООО «Ромашка»</a:t></a:r></a:p></c:rich></c:tx></c:title>"
+             "<c:ser><c:cat><c:strRef><c:f>Лист1!$A$2</c:f><c:strCache><c:pt idx=\"0\">"
+             "<c:v>ООО «Лютик»</c:v></c:pt></c:strCache></c:strRef></c:cat>"
+             "<c:val><c:numCache><c:pt idx=\"0\"><c:v>1500</c:v></c:pt></c:numCache></c:val>"
+             "</c:ser></c:chart></c:chartSpace>")
+    src = _docx(tmp_path / "c.docx", [_para(["Отчет"])], extra={"word/charts/chart1.xml": chart})
+    dst = tmp_path / "o.docx"
+    mapping = docx.mask_document(src, dst, Masker(types=("ORG",), ner=False))
+    body = zipfile.ZipFile(dst).read("word/charts/chart1.xml").decode("utf-8")
+    assert "Ромашка" not in body and "Лютик" not in body
+    assert "<c:v>1500</c:v>" in body and "<c:f>Лист1!$A$2</c:f>" in body
+    restored = tmp_path / "r.docx"
+    docx.unmask_document(dst, restored, mapping)
+    assert docx.paragraph_texts(restored) == docx.paragraph_texts(src)
+
+
+def test_smartart_is_masked_in_data_and_drawing(tmp_path):
+    """Текст SmartArt лежит дважды - в данных и в отрисовке: метка одна и та же."""
+    from pii_mask_enhanced.engine.core import Masker
+
+    para = "<a:p><a:r><a:t>Директор ООО «Ромашка»</a:t></a:r></a:p>"
+    # в данных SmartArt абзацы лежат в контейнере <dgm:t> - он не текстовый узел
+    data = f'<dgm:pt><dgm:t><a:bodyPr/>{para}</dgm:t></dgm:pt>'
+    extra = {"word/diagrams/data1.xml": f'<?xml version="1.0"?><dgm:dataModel xmlns:dgm="d" {A_NS}>{data}</dgm:dataModel>',
+             "word/diagrams/drawing1.xml": f'<?xml version="1.0"?><dsp:drawing xmlns:dsp="s" {A_NS}>{para}</dsp:drawing>'}
+    src = _docx(tmp_path / "s.docx", [_para(["Схема"])], extra=extra)
+    dst = tmp_path / "o.docx"
+    docx.mask_document(src, dst, Masker(types=("ORG",), ner=False))
+    with zipfile.ZipFile(dst) as z:
+        bodies = [z.read(n).decode("utf-8") for n in extra]
+    assert all("Ромашка" not in b and "Директор {{ORG_1}}" in b for b in bodies)
+
+
+def test_picture_alt_text_is_masked(tmp_path):
+    from pii_mask_enhanced.engine.core import Masker
+
+    pic = ('<w:p><w:r><w:drawing><wp:inline xmlns:wp="wp"><wp:docPr id="1" name="Рисунок 1" '
+           'descr="Фото, sokolova@example.ru"/></wp:inline></w:drawing></w:r></w:p>')
+    src = _docx(tmp_path / "p.docx", [pic])
+    dst = tmp_path / "o.docx"
+    docx.mask_document(src, dst, Masker(types=("EMAIL",), ner=False))
+    body = zipfile.ZipFile(dst).read("word/document.xml").decode("utf-8")
+    assert "sokolova@example.ru" not in body and 'descr="Фото, user1@example.com"' in body
 
 
 def test_author_is_cleared(tmp_path):
@@ -374,7 +428,7 @@ def test_cli_unmask_docx_default_name(tmp_path):
     import json
     import sys
 
-    from pii_mask_enhanced.interfaces.cli.cli import main
+    from pii_mask_enhanced.cli.cli import main
 
     src = _docx(tmp_path / "отчет.masked.docx", [_para(["Подписал {{PERSON_1}}"])])
     mp = tmp_path / "отчет.mapping.json"

@@ -25,7 +25,7 @@ def fake_converter(monkeypatch, tmp_path):
                      [_slide(_shape([_para(["Почта sokolova@example.ru"])]))])
     seen = {}
 
-    def convert(src, outdir, fmt="pptx"):
+    def convert(src, outdir, fmt="pptx", soffice=None):
         if fmt == "ppt":
             seen["to_ppt"] = paragraph_texts(src)
             return _ole(outdir / f"{src.stem}.ppt")
@@ -86,7 +86,7 @@ def test_unprotected_current_user_is_converted(tmp_path, fake_converter):
 
 
 def test_missing_converter_is_named(tmp_path, monkeypatch):
-    monkeypatch.setattr(legacy, "find_soffice", lambda: None)
+    monkeypatch.setattr(legacy, "find_soffice", lambda path=None: None)
     monkeypatch.setattr(legacy, "pywin32_available", lambda: False)
     with pytest.raises(ConvertError, match="LibreOffice"):
         with PPT.as_new(_ole(tmp_path / "a.ppt")):

@@ -6,6 +6,7 @@ from typing import Callable, Iterable
 
 from ..detection import presets, profile
 from ..detection.registry.entity_types import DEFAULT_TYPES
+from ..audit.base import Auditor
 from .core import Masker
 
 
@@ -30,7 +31,8 @@ def type_names(values: Iterable[str] | None) -> tuple[str, ...] | None:
     return tuple(v.strip().upper() for v in values) if values else None
 
 
-def build_masker(opts: Options, probe: Callable[[], str | None]) -> tuple[Masker, list[str]]:
+def build_masker(opts: Options, probe: Callable[[], str | None],
+                 auditor: Auditor | None = None) -> tuple[Masker, list[str]]:
     """Masker и пояснения к выбору набора. probe() - текст документа или None, зовется по нужде.
 
     ValueError - неизвестный набор или тип.
@@ -66,5 +68,6 @@ def build_masker(opts: Options, probe: Callable[[], str | None]) -> tuple[Masker
         ner_person_needs_fio=opts.ner_person_needs_fio or bool(preset and preset.ner_person_needs_fio),
         supported_names=opts.supported_names,
         inn_needs_label=opts.inn_needs_label or bool(preset and preset.inn_needs_label),
+        auditor=auditor,
     )
     return masker, notes

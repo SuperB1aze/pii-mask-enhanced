@@ -7,7 +7,6 @@
 """
 import shutil
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -34,7 +33,7 @@ def fake_converter(monkeypatch, tmp_path):
                      [_para(["Директор Соколова Анна Владимировна"])])
     seen = {}
 
-    def convert(src, outdir, fmt="docx"):
+    def convert(src, outdir, fmt="docx", soffice=None):
         if fmt == "doc":
             seen["to_doc"] = paragraph_texts(src)
             return _ole(outdir / f"{src.stem}.doc")
@@ -84,35 +83,46 @@ def test_not_a_word_file_is_an_error(tmp_path):
 
 
 def test_converter_without_output_is_an_error(tmp_path, monkeypatch):
-    monkeypatch.setattr(DOC, "convert", lambda src, outdir: outdir / "missing.docx")
+    monkeypatch.setattr(DOC, "convert", lambda src, outdir, soffice=None: outdir / "missing.docx")
     with pytest.raises(ConvertError, match="не создал"):
         with DOC.as_new(_ole(tmp_path / "a.doc")):
             pass
 
 
 def test_missing_converter_is_named(tmp_path, monkeypatch):
-    monkeypatch.setattr(legacy, "find_soffice", lambda: None)
+    monkeypatch.setattr(legacy, "find_soffice", lambda path=None: None)
     monkeypatch.setattr(legacy, "pywin32_available", lambda: False)
     with pytest.raises(ConvertError, match="LibreOffice"):
         with DOC.as_new(_ole(tmp_path / "a.doc")):
             pass
 
 
-def test_configured_soffice_path_must_exist(monkeypatch, tmp_path):
-    monkeypatch.setenv("PII_MASK_SOFFICE", str(tmp_path / "nope" / "soffice"))
-    with pytest.raises(ConvertError, match="PII_MASK_SOFFICE"):
-        legacy.find_soffice()
+def test_configured_soffice_path_must_exist(tmp_path):
+    with pytest.raises(ConvertError, match="не найден"):
+        legacy.find_soffice(tmp_path / "nope" / "soffice")
 
 
-def test_configured_soffice_path_wins(monkeypatch, tmp_path):
+def test_configured_soffice_path_wins(tmp_path):
     exe = tmp_path / "soffice"
     exe.write_bytes(b"")
-    monkeypatch.setenv("PII_MASK_SOFFICE", str(exe))
-    assert legacy.find_soffice() == str(exe)
+    assert legacy.find_soffice(exe) == str(exe)
+
+
+def test_library_ignores_soffice_environment(monkeypatch, tmp_path):
+    """Окружение читает только CLI: библиотека берет путь из параметра."""
+    monkeypatch.setenv("PII_MASK_SOFFICE", str(tmp_path / "nope" / "soffice"))
+    legacy.find_soffice()
+
+
+def test_cli_passes_soffice_from_environment(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PII_MASK_SOFFICE", str(tmp_path / "nope" / "soffice"))
+    assert _run_cli(["mask", str(_ole(tmp_path / "a.doc"))]) == 2
+    assert "не найден" in capsys.readouterr().err
 
 
 def _run_cli(argv):
-    from pii_mask_enhanced.interfaces.cli.cli import main
+    from pii_mask_enhanced.cli.cli import main
 
     old, sys.argv = sys.argv, ["pii-mask", *argv]
     try:
@@ -157,7 +167,7 @@ def test_cli_unmasks_doc_into_doc(tmp_path, fake_converter):
 
 
 def test_cli_reports_conversion_error(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(legacy, "find_soffice", lambda: None)
+    monkeypatch.setattr(legacy, "find_soffice", lambda path=None: None)
     monkeypatch.setattr(legacy, "pywin32_available", lambda: False)
     assert _run_cli(["mask", str(_ole(tmp_path / "a.doc"))]) == 2
     assert "LibreOffice" in capsys.readouterr().err
@@ -185,7 +195,7 @@ def test_real_word_roundtrip(tmp_path, monkeypatch):
     """Настоящий Word: .docx -> .doc (Word же) -> DOC.as_new -> тот же текст."""
     import win32com.client
 
-    monkeypatch.setattr(legacy, "find_soffice", lambda: None)  # именно Word, даже если есть LibreOffice
+    monkeypatch.setattr(legacy, "find_soffice", lambda path=None: None)  # именно Word, даже если есть LibreOffice
     paras = ["Займодавец Воронцов Андрей Игоревич", "Заёмщик Белоусова Марина Сергеевна"]
     src_docx = _docx(tmp_path / "src.docx", [_para([p]) for p in paras])
     src_doc = tmp_path / "src.doc"

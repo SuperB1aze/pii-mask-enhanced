@@ -1,24 +1,23 @@
 [project]
 name = "pii-mask-enhanced"
-version = "0.1.0"
-description = "Локальный шлюз маскировки ПД перед отправкой текста в облачные LLM (mask/unmask, stateless mapping)"
-requires-python = ">=3.10"
+version = "1.0.0"
+description = "Русскоцентричная библиотека для маскировки персональных данных перед отправкой текста в облачные LLM"
+requires-python = ">=3.11"
 dependencies = [
     "natasha>=1.6",
     "setuptools<81",  # pymorphy2 (зависимость natasha) требует pkg_resources, из 81+ он удален
-    "fastapi>=0.110",
-    "uvicorn>=0.29",
-    "httpx>=0.27",
-    "phonenumbers>=9.0",  # международные телефоны: проверка по плану нумерации страны
+    "phonenumbers>=9.0",  # международные телефоны
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "httpx>=0.27"]
+# аудитор на Ollama (audit.OllamaAuditor)
+audit = ["httpx>=0.27"]
 # конвертация .doc через MS Word, если нет LibreOffice (только Windows)
 word = ["pywin32>=306; sys_platform == 'win32'"]
 
 [project.scripts]
-pii-mask = "pii_mask_enhanced.interfaces.cli.cli:main"
+pii-mask = "pii_mask_enhanced.cli.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -28,5 +27,5 @@ build-backend = "setuptools.build_meta"
 include = ["pii_mask_enhanced*"]
 
 [tool.pytest.ini_options]
-# предупреждение от pymorphy2, что глушится в ner.py
+# предупреждение от pymorphy2 по ner.py
 filterwarnings = ["ignore:pkg_resources is deprecated:UserWarning"]
