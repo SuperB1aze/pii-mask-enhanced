@@ -8,7 +8,7 @@ import zipfile
 
 import pytest
 
-from pii_mask_enhanced.formats.word import docx
+from pii_mask_enhanced.formats.word.docx import DOCX
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -50,7 +50,7 @@ def _docx(path, paragraphs: list[str], extra: dict[str, str] | None = None):
 def test_reads_paragraph_as_whole(tmp_path):
     """Абзац из кусков читается одной строкой - иначе имя не найти."""
     src = _docx(tmp_path / "a.docx", [_para(["Соко", "лова Анна ", "Владимировна"])])
-    assert docx.paragraph_texts(src) == ["Соколова Анна Владимировна"]
+    assert DOCX.texts(src) == ["Соколова Анна Владимировна"]
 
 
 def test_masks_name_split_across_runs(tmp_path):
@@ -59,8 +59,8 @@ def test_masks_name_split_across_runs(tmp_path):
 
     src = _docx(tmp_path / "b.docx", [_para(["Директор Соко", "лова Анна Владимировна"])])
     dst = tmp_path / "out.docx"
-    docx.mask_document(src, dst, Masker(types=("PERSON",)))
-    text = " ".join(docx.paragraph_texts(dst))
+    DOCX.mask(src, dst, Masker(types=("PERSON",)))
+    text = " ".join(DOCX.texts(dst))
     assert "Соколова" not in text
     assert "{{PERSON_1}}" in text
     assert "Директор" in text
@@ -74,7 +74,7 @@ def test_unchanged_paragraph_keeps_its_runs(tmp_path):
                 [_para(["Итого по ", "накладной"], bold_first=True),
                  _para(["Директор Соколова Анна Владимировна"])])
     dst = tmp_path / "out.docx"
-    docx.mask_document(src, dst, Masker(types=("PERSON",)))
+    DOCX.mask(src, dst, Masker(types=("PERSON",)))
     body = zipfile.ZipFile(dst).read("word/document.xml").decode("utf-8")
     assert "<w:b/>" in body, "жирное начертание потеряно"
     assert body.count("Итого по ") == 1 and "накладной" in body
@@ -85,7 +85,7 @@ def test_document_stays_a_valid_package(tmp_path):
 
     src = _docx(tmp_path / "d.docx", [_para(["Соколова Анна Владимировна"])])
     dst = tmp_path / "out.docx"
-    docx.mask_document(src, dst, Masker(types=("PERSON",)))
+    DOCX.mask(src, dst, Masker(types=("PERSON",)))
     with zipfile.ZipFile(dst) as z:
         assert z.testzip() is None
         assert "[Content_Types].xml" in z.namelist()
@@ -101,7 +101,7 @@ def test_header_and_footer_are_masked(tmp_path):
     src = _docx(tmp_path / "e.docx", [_para(["Товар"])],
                 extra={"word/header1.xml": header})
     dst = tmp_path / "out.docx"
-    docx.mask_document(src, dst, Masker(types=("ORG",)))
+    DOCX.mask(src, dst, Masker(types=("ORG",)))
     body = zipfile.ZipFile(dst).read("word/header1.xml").decode("utf-8")
     assert "Ромашка" not in body
 
@@ -115,7 +115,7 @@ def test_unknown_text_part_refuses(tmp_path):
     src = _docx(tmp_path / "f.docx", [_para(["Товар"])],
                 extra={"word/glossary/document.xml": glossary})
     with pytest.raises(ValueError, match="glossary"):
-        docx.mask_document(src, tmp_path / "o.docx", Masker(types=("ORG",)))
+        DOCX.mask(src, tmp_path / "o.docx", Masker(types=("ORG",)))
 
 
 A_NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
@@ -134,13 +134,13 @@ def test_chart_title_and_cache_are_masked(tmp_path):
              "</c:ser></c:chart></c:chartSpace>")
     src = _docx(tmp_path / "c.docx", [_para(["Отчет"])], extra={"word/charts/chart1.xml": chart})
     dst = tmp_path / "o.docx"
-    mapping = docx.mask_document(src, dst, Masker(types=("ORG",), ner=False))
+    mapping = DOCX.mask(src, dst, Masker(types=("ORG",), ner=False))
     body = zipfile.ZipFile(dst).read("word/charts/chart1.xml").decode("utf-8")
     assert "Ромашка" not in body and "Лютик" not in body
     assert "<c:v>1500</c:v>" in body and "<c:f>Лист1!$A$2</c:f>" in body
     restored = tmp_path / "r.docx"
-    docx.unmask_document(dst, restored, mapping)
-    assert docx.paragraph_texts(restored) == docx.paragraph_texts(src)
+    DOCX.unmask(dst, restored, mapping)
+    assert DOCX.texts(restored) == DOCX.texts(src)
 
 
 def test_smartart_is_masked_in_data_and_drawing(tmp_path):
@@ -154,7 +154,7 @@ def test_smartart_is_masked_in_data_and_drawing(tmp_path):
              "word/diagrams/drawing1.xml": f'<?xml version="1.0"?><dsp:drawing xmlns:dsp="s" {A_NS}>{para}</dsp:drawing>'}
     src = _docx(tmp_path / "s.docx", [_para(["Схема"])], extra=extra)
     dst = tmp_path / "o.docx"
-    docx.mask_document(src, dst, Masker(types=("ORG",), ner=False))
+    DOCX.mask(src, dst, Masker(types=("ORG",), ner=False))
     with zipfile.ZipFile(dst) as z:
         bodies = [z.read(n).decode("utf-8") for n in extra]
     assert all("Ромашка" not in b and "Директор {{ORG_1}}" in b for b in bodies)
@@ -167,7 +167,7 @@ def test_picture_alt_text_is_masked(tmp_path):
            'descr="Фото, sokolova@example.ru"/></wp:inline></w:drawing></w:r></w:p>')
     src = _docx(tmp_path / "p.docx", [pic])
     dst = tmp_path / "o.docx"
-    docx.mask_document(src, dst, Masker(types=("EMAIL",), ner=False))
+    DOCX.mask(src, dst, Masker(types=("EMAIL",), ner=False))
     body = zipfile.ZipFile(dst).read("word/document.xml").decode("utf-8")
     assert "sokolova@example.ru" not in body and 'descr="Фото, user1@example.com"' in body
 
@@ -180,7 +180,7 @@ def test_author_is_cleared(tmp_path):
     src = _docx(tmp_path / "g.docx", [_para(["Товар"])],
                 extra={"docProps/core.xml": core})
     dst = tmp_path / "out.docx"
-    docx.mask_document(src, dst, Masker(types=("PERSON",)))
+    DOCX.mask(src, dst, Masker(types=("PERSON",)))
     body = zipfile.ZipFile(dst).read("docProps/core.xml").decode("utf-8")
     assert "Соколов" not in body
 
@@ -189,7 +189,7 @@ def test_refuses_to_write_over_source(tmp_path):
     src = _docx(tmp_path / "h.docx", [_para(["Соколова Анна Владимировна"])])
     before = src.read_bytes()
     with pytest.raises(ValueError):
-        docx.rewrite(src, src, ["что-то"])
+        DOCX.rewrite(src, src, ["что-то"])
     assert src.read_bytes() == before
 
 
@@ -205,7 +205,7 @@ def _masked_body(tmp_path, paragraphs, types, extra=None, part="word/document.xm
 
     src = _docx(tmp_path / "src.docx", paragraphs, extra)
     dst = tmp_path / "out.docx"
-    docx.mask_document(src, dst, Masker(types=types))
+    DOCX.mask(src, dst, Masker(types=types))
     return zipfile.ZipFile(dst).read(part).decode("utf-8")
 
 
@@ -288,7 +288,7 @@ def test_text_outside_paragraph_refuses(tmp_path):
 
     src = _docx(tmp_path / "i.docx", [_para(["Товар"]), "<w:r><w:t>Соколова Анна</w:t></w:r>"])
     with pytest.raises(ValueError, match="вне абзаца"):
-        docx.mask_document(src, tmp_path / "o.docx", Masker(types=("PERSON",)))
+        DOCX.mask(src, tmp_path / "o.docx", Masker(types=("PERSON",)))
 
 
 def test_self_closing_tags_do_not_swallow_text(tmp_path):
@@ -296,7 +296,7 @@ def test_self_closing_tags_do_not_swallow_text(tmp_path):
     src = _docx(tmp_path / "j.docx",
                 ['<w:p w:rsidR="00A1"/>',
                  '<w:p><w:r><w:t xml:space="preserve"/></w:r><w:r><w:t>Товар</w:t></w:r></w:p>'])
-    assert docx.paragraph_texts(src) == ["Товар"]
+    assert DOCX.texts(src) == ["Товар"]
 
 
 def test_external_link_target_is_masked(tmp_path):
@@ -348,8 +348,8 @@ def test_strict_inn_masks_labelled_table_cell(tmp_path):
              + "</w:tr></w:tbl>")
     src = _docx(tmp_path / "t.docx", [table, _para(["1063391630"])])
     dst = tmp_path / "o.docx"
-    docx.mask_document(src, dst, Masker(types=("INN",), inn_needs_label=True))
-    out = docx.paragraph_texts(dst)
+    DOCX.mask(src, dst, Masker(types=("INN",), inn_needs_label=True))
+    out = DOCX.texts(dst)
     assert "6083778353" not in out, "ИНН рядом с подписью утек"
     assert "1063391630" in out, "одинокий номер без подписи маскировать не надо"
 
@@ -373,8 +373,8 @@ def _masked_texts(tmp_path, body: list[str]) -> list[str]:
 
     src = _docx(tmp_path / "t.docx", body)
     dst = tmp_path / "t_out.docx"
-    docx.mask_document(src, dst, Masker(ner=False))
-    return docx.paragraph_texts(dst)
+    DOCX.mask(src, dst, Masker(ner=False))
+    return DOCX.texts(dst)
 
 
 def test_table_header_labels_every_row(tmp_path):
@@ -407,7 +407,7 @@ def test_table_labels_in_nested_table(tmp_path):
 
 def test_table_labels_scan(tmp_path):
     src = _docx(tmp_path / "s.docx", [_table([["Табельный номер"], ["123"], ["124"]])])
-    labelled = docx.table_labels(src)
+    labelled = DOCX.labels(src)
     assert labelled["123"][0] == "PERSON_ID" and labelled["124"][0] == "PERSON_ID"
 
 
@@ -418,10 +418,10 @@ def test_unmask_document_restores_text(tmp_path):
     src = _docx(tmp_path / "u.docx", [_para(["Директор Соко", "лова Анна Владимировна"]),
                                        _para(["Итого"])])
     masked = tmp_path / "u.masked.docx"
-    mapping = docx.mask_document(src, masked, Masker(types=("PERSON",)))
+    mapping = DOCX.mask(src, masked, Masker(types=("PERSON",)))
     restored = tmp_path / "u.unmasked.docx"
-    docx.unmask_document(masked, restored, mapping)
-    assert docx.paragraph_texts(restored) == docx.paragraph_texts(src)
+    DOCX.unmask(masked, restored, mapping)
+    assert DOCX.texts(restored) == DOCX.texts(src)
 
 
 def test_cli_unmask_docx_default_name(tmp_path):
@@ -442,4 +442,4 @@ def test_cli_unmask_docx_default_name(tmp_path):
     finally:
         sys.argv = old
     assert exc.value.code == 0
-    assert docx.paragraph_texts(tmp_path / "отчет.unmasked.docx") == ["Подписал Соколова Анна"]
+    assert DOCX.texts(tmp_path / "отчет.unmasked.docx") == ["Подписал Соколова Анна"]

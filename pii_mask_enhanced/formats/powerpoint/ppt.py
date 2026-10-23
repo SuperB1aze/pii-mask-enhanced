@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..common.legacy import MSO_FORCE_DISABLE_MACROS, ConvertError, LegacyFormat
+from ..common.legacy import MSO_FORCE_DISABLE_MACROS, LegacyFormat, com_failure, office_app
 
 _PP_SAVE_PPTX = 24                    # ppSaveAsOpenXMLPresentation
 _PP_SAVE_PPT = 1                      # ppSaveAsPresentation
@@ -24,37 +24,29 @@ def _locked(blob: bytes) -> bool:
 
 
 def _via_powerpoint(src: Path, outdir: Path, fmt: str) -> Path:
-    import pythoncom
-    import pywintypes
-    import win32com.client
-
     dst = outdir / f"{src.stem}.{fmt}"
-    pythoncom.CoInitialize()
-    try:
-        # PowerPoint живет одним экземпляром
-        app = win32com.client.DispatchEx("PowerPoint.Application")
-        alerts, security = app.DisplayAlerts, app.AutomationSecurity
+    saved = {}
+
+    def close(app) -> None:
+        # PowerPoint живет одним экземпляром: вернуть его настройки и закрыть, только если он наш
+        if saved:
+            app.DisplayAlerts, app.AutomationSecurity = saved["alerts"], saved["security"]
+        if app.Presentations.Count == 0:
+            app.Quit()
+
+    with office_app("PowerPoint.Application", close) as app:
+        saved.update(alerts=app.DisplayAlerts, security=app.AutomationSecurity)
+        app.DisplayAlerts = _PP_ALERTS_NONE
+        app.AutomationSecurity = MSO_FORCE_DISABLE_MACROS  # макросы чужого файла не запускаем
+        with com_failure("PowerPoint не открыл файл - он поврежден"):
+            # файл с паролем сюда не доходит: его отсекает _locked
+            pres = app.Presentations.Open(str(src), ReadOnly=True, WithWindow=False)
         try:
-            app.DisplayAlerts = _PP_ALERTS_NONE
-            app.AutomationSecurity = MSO_FORCE_DISABLE_MACROS  # макросы чужого файла не запускаем
-            try:
-                # файл с паролем сюда не доходит: его отсекает _locked
-                pres = app.Presentations.Open(str(src), ReadOnly=True, WithWindow=False)
-            except pywintypes.com_error as exc:
-                raise ConvertError("PowerPoint не открыл файл - он поврежден") from exc
-            try:
+            with com_failure(f"PowerPoint не смог сохранить файл в .{fmt}"):
                 pres.RemovePersonalInformation = True
                 pres.SaveAs(str(dst), _PP_SAVE_PPTX if fmt == "pptx" else _PP_SAVE_PPT)
-            except pywintypes.com_error as exc:
-                raise ConvertError(f"PowerPoint не смог сохранить файл в .{fmt}") from exc
-            finally:
-                pres.Close()
         finally:
-            app.DisplayAlerts, app.AutomationSecurity = alerts, security
-            if app.Presentations.Count == 0:
-                app.Quit()
-    finally:
-        pythoncom.CoUninitialize()
+            pres.Close()
     return dst
 
 

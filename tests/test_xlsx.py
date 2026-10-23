@@ -8,6 +8,7 @@ import zipfile
 import pytest
 
 from pii_mask_enhanced.formats.excel import xlsx
+from pii_mask_enhanced.formats.excel.xlsx import XLSX
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -61,7 +62,7 @@ def _book(tmp_path, shared: list[str], inline: list[str] = (), numbers: list[str
 
 def test_reads_shared_and_inline_strings(tmp_path):
     src = _book(tmp_path, shared=["ООО «Ромашка»", "Контрагент"], inline=["Петров Иван"])
-    assert xlsx.cell_texts(src) == ["ООО «Ромашка»", "Контрагент", "Петров Иван"]
+    assert XLSX.texts(src) == ["ООО «Ромашка»", "Контрагент", "Петров Иван"]
 
 
 def test_numbers_are_read_and_plain_ones_stay_numbers(tmp_path):
@@ -70,9 +71,9 @@ def test_numbers_are_read_and_plain_ones_stay_numbers(tmp_path):
     from pii_mask_enhanced.engine.core import Masker
 
     src = _book(tmp_path, shared=["Доход"], numbers=["1000", "45678"])
-    assert xlsx.cell_texts(src) == ["Доход", "1000", "45678"]
+    assert XLSX.texts(src) == ["Доход", "1000", "45678"]
     dst = tmp_path / "out.xlsx"
-    xlsx.mask_workbook(src, dst, Masker(ner=False))
+    XLSX.mask(src, dst, Masker(ner=False))
     sheet = zipfile.ZipFile(dst).read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert '<c r="C1"><v>1000</v></c>' in sheet
 
@@ -80,8 +81,8 @@ def test_numbers_are_read_and_plain_ones_stay_numbers(tmp_path):
 def test_rewrite_replaces_text_and_keeps_workbook_valid(tmp_path):
     src = _book(tmp_path, shared=["ООО «Ромашка»", "Контрагент"], inline=["Петров Иван"])
     dst = tmp_path / "out.xlsx"
-    xlsx.rewrite(src, dst, ["{{ORG_1}}", "Контрагент", "{{PERSON_1}}"])
-    assert xlsx.cell_texts(dst) == ["{{ORG_1}}", "Контрагент", "{{PERSON_1}}"]
+    XLSX.rewrite(src, dst, ["{{ORG_1}}", "Контрагент", "{{PERSON_1}}"])
+    assert XLSX.texts(dst) == ["{{ORG_1}}", "Контрагент", "{{PERSON_1}}"]
     with zipfile.ZipFile(dst) as z:
         assert z.testzip() is None
         # части книги не потеряны - иначе Excel откажется открывать
@@ -93,15 +94,15 @@ def test_rewrite_rejects_length_mismatch(tmp_path):
     """Рассинхрон списка значений - это сдвиг подстановки по всей книге."""
     src = _book(tmp_path, shared=["а", "б"])
     with pytest.raises(ValueError):
-        xlsx.rewrite(src, tmp_path / "out.xlsx", ["только одно"])
+        XLSX.rewrite(src, tmp_path / "out.xlsx", ["только одно"])
 
 
 def test_special_chars_survive_roundtrip(tmp_path):
     """Кавычки и амперсанд в названии - обычное дело у контрагентов."""
     src = _book(tmp_path, shared=['ООО "Р&Д" <тест>'])
     dst = tmp_path / "out.xlsx"
-    xlsx.rewrite(src, dst, ['ЗАО "А&Б" <x>'])
-    assert xlsx.cell_texts(dst) == ['ЗАО "А&Б" <x>']
+    XLSX.rewrite(src, dst, ['ЗАО "А&Б" <x>'])
+    assert XLSX.texts(dst) == ['ЗАО "А&Б" <x>']
 
 
 def test_mask_workbook_masks_org_keeps_numbers(tmp_path):
@@ -111,8 +112,8 @@ def test_mask_workbook_masks_org_keeps_numbers(tmp_path):
     src = _book(tmp_path, shared=["ООО «Ромашка»", "Содержание операции", "ООО «Ромашка»"],
                 numbers=["1000"])
     dst = tmp_path / "out.xlsx"
-    mapping = xlsx.mask_workbook(src, dst, Masker(types=("ORG", "PERSON")))
-    out = xlsx.cell_texts(dst)
+    mapping = XLSX.mask(src, dst, Masker(types=("ORG", "PERSON")))
+    out = XLSX.texts(dst)
     assert "ООО «Ромашка»" not in out
     assert "Содержание операции" in out          # канцелярия не ПД
     # одна сущность, встреченная дважды, получает одну метку на всю книгу
@@ -126,8 +127,8 @@ def test_multiline_cell_survives(tmp_path):
 
     src = _book(tmp_path, shared=["ООО «Ромашка»\nвторая строка", "Итого"])
     dst = tmp_path / "out.xlsx"
-    xlsx.mask_workbook(src, dst, Masker(types=("ORG",)))
-    out = xlsx.cell_texts(dst)
+    XLSX.mask(src, dst, Masker(types=("ORG",)))
+    out = XLSX.texts(dst)
     assert len(out) == 2
     assert out[1] == "Итого"
     assert "ООО «Ромашка»" not in out[0]
@@ -141,28 +142,28 @@ def test_numeric_char_refs_decoded(tmp_path):
     экранирует амперсанд - текст ячейки меняется на глазах у пользователя.
     """
     src = _book(tmp_path, shared=["one&#10;two", "x&#38;y", "a&amp;b"])
-    assert xlsx.cell_texts(src) == ["one\ntwo", "x&y", "a&b"]
+    assert XLSX.texts(src) == ["one\ntwo", "x&y", "a&b"]
 
 
 def test_escaped_reference_is_not_decoded_twice(tmp_path):
     """&amp;#10; означает литерал "&#10;", а не перевод строки."""
     src = _book(tmp_path, shared=["a&amp;#10;b"])
-    assert xlsx.cell_texts(src) == ["a&#10;b"]
+    assert XLSX.texts(src) == ["a&#10;b"]
 
 
 def test_roundtrip_preserves_reference_text(tmp_path):
     src = _book(tmp_path, shared=["one&#10;two"])
     dst = tmp_path / "out.xlsx"
-    xlsx.rewrite(src, dst, xlsx.cell_texts(src))
-    assert xlsx.cell_texts(dst) == ["one\ntwo"]
+    XLSX.rewrite(src, dst, XLSX.texts(src))
+    assert XLSX.texts(dst) == ["one\ntwo"]
 
 
 def test_carriage_return_survives(tmp_path):
     """Сырой \\r XML-парсер нормализует в \\n - его надо писать ссылкой."""
     src = _book(tmp_path, shared=["a"])
     dst = tmp_path / "out.xlsx"
-    xlsx.rewrite(src, dst, ["строка\r\nвторая"])
-    assert xlsx.cell_texts(dst) == ["строка\r\nвторая"]
+    XLSX.rewrite(src, dst, ["строка\r\nвторая"])
+    assert XLSX.texts(dst) == ["строка\r\nвторая"]
 
 
 # --- находки состязательного ревью ---
@@ -172,7 +173,7 @@ def test_refuses_to_write_over_source(tmp_path):
     src = _book(tmp_path, shared=["ООО «Ромашка»"])
     before = src.read_bytes()
     with pytest.raises(ValueError):
-        xlsx.rewrite(src, src, ["{{ORG_1}}"])
+        XLSX.rewrite(src, src, ["{{ORG_1}}"])
     assert src.read_bytes() == before, "исходник должен остаться нетронутым"
 
 
@@ -186,8 +187,8 @@ def test_entity_swallowing_newline_does_not_break_book(tmp_path):
 
     src = _book(tmp_path, shared=["ООО «СТРОЙМОНТАЖНАЛАДКА\nСТРОЙ»", "Итого"])
     dst = tmp_path / "out.xlsx"
-    xlsx.mask_workbook(src, dst, Masker(types=("ORG",), ner=False))
-    out = xlsx.cell_texts(dst)
+    XLSX.mask(src, dst, Masker(types=("ORG",), ner=False))
+    out = XLSX.texts(dst)
     assert len(out) == 2 and out[1] == "Итого"
     assert "СТРОЙМОНТАЖНАЛАДКА" not in out[0]
 
@@ -200,7 +201,7 @@ def test_namespaced_tags_are_found(tmp_path):
     with zipfile.ZipFile(path, "w") as z:
         z.writestr("[Content_Types].xml", CONTENT_TYPES)
         z.writestr("xl/sharedStrings.xml", sst)
-    assert xlsx.cell_texts(path) == ["ООО «Ромашка»"]
+    assert XLSX.texts(path) == ["ООО «Ромашка»"]
 
 
 def test_nonstandard_worksheet_name_is_scanned(tmp_path):
@@ -212,7 +213,7 @@ def test_nonstandard_worksheet_name_is_scanned(tmp_path):
     with zipfile.ZipFile(path, "w") as z:
         z.writestr("[Content_Types].xml", CONTENT_TYPES)
         z.writestr("xl/worksheets/детализация.xml", sheet)
-    assert xlsx.cell_texts(path) == ["ООО «Ромашка»"]
+    assert XLSX.texts(path) == ["ООО «Ромашка»"]
 
 
 def test_unknown_text_part_refuses_instead_of_leaking(tmp_path):
@@ -231,7 +232,7 @@ def test_unknown_text_part_refuses_instead_of_leaking(tmp_path):
                    '<?xml version="1.0"?><sst><si><t>Итого</t></si></sst>')
         z.writestr("xl/custom/item1.xml", unknown)
     with pytest.raises(ValueError, match="custom"):
-        xlsx.mask_workbook(path, tmp_path / "o.xlsx", Masker(types=("ORG",), ner=False))
+        XLSX.mask(path, tmp_path / "o.xlsx", Masker(types=("ORG",), ner=False))
 
 
 def _book_with(tmp_path, parts: dict[str, str], shared=("Итого",), workbook=WORKBOOK):
@@ -261,12 +262,12 @@ def test_shape_text_is_masked(tmp_path):
                "</xdr:sp></xdr:wsDr>")
     src = _book_with(tmp_path, {"xl/drawings/drawing1.xml": drawing})
     dst = tmp_path / "o.xlsx"
-    mapping = xlsx.mask_workbook(src, dst, Masker(types=("ORG",), ner=False))
+    mapping = XLSX.mask(src, dst, Masker(types=("ORG",), ner=False))
     body = _part_text(dst, "xl/drawings/drawing1.xml")
     assert "Ромашка" not in body and "Лютик" not in body
     restored = tmp_path / "r.xlsx"
-    xlsx.unmask_workbook(dst, restored, mapping)
-    assert xlsx.cell_texts(restored) == xlsx.cell_texts(src)
+    XLSX.unmask(dst, restored, mapping)
+    assert XLSX.texts(restored) == XLSX.texts(src)
 
 
 def test_chart_cache_is_masked_like_cells(tmp_path):
@@ -277,9 +278,9 @@ def test_chart_cache_is_masked_like_cells(tmp_path):
              "</c:strCache></c:strRef></c:cat></c:ser></c:chart></c:chartSpace>")
     src = _book_with(tmp_path, {"xl/charts/chart1.xml": chart}, shared=("ООО «Ромашка»",))
     dst = tmp_path / "o.xlsx"
-    xlsx.mask_workbook(src, dst, Masker(types=("ORG",), ner=False))
+    XLSX.mask(src, dst, Masker(types=("ORG",), ner=False))
     assert "<c:v>{{ORG_1}}</c:v>" in _part_text(dst, "xl/charts/chart1.xml")
-    assert xlsx.cell_texts(dst)[0] == "{{ORG_1}}", "ячейка и кэш диаграммы - одна метка"
+    assert XLSX.texts(dst)[0] == "{{ORG_1}}", "ячейка и кэш диаграммы - одна метка"
 
 
 def test_pivot_cache_is_masked(tmp_path):
@@ -296,7 +297,7 @@ def test_pivot_cache_is_masked(tmp_path):
     src = _book_with(tmp_path, {"xl/pivotCache/pivotCacheDefinition1.xml": definition,
                                  "xl/pivotCache/pivotCacheRecords1.xml": records})
     dst = tmp_path / "o.xlsx"
-    xlsx.mask_workbook(src, dst, Masker(types=("EMAIL",), ner=False))
+    XLSX.mask(src, dst, Masker(types=("EMAIL",), ner=False))
     body = (_part_text(dst, "xl/pivotCache/pivotCacheDefinition1.xml")
             + _part_text(dst, "xl/pivotCache/pivotCacheRecords1.xml"))
     assert "sokolova@" not in body and "ivanov@" not in body
@@ -313,7 +314,7 @@ def test_saved_path_and_share_user_are_cleared(tmp_path):
                     'url="C:\\Users\\sokolova\\Documents\\"/><sheets>')
     src = _book_with(tmp_path, {}, workbook=workbook)
     dst = tmp_path / "o.xlsx"
-    xlsx.mask_workbook(src, dst, Masker(types=("PERSON",), ner=False))
+    XLSX.mask(src, dst, Masker(types=("PERSON",), ner=False))
     body = _part_text(dst, "xl/workbook.xml")
     assert "sokolova" not in body and "Соколова" not in body
     assert 'url=""' in body and 'userName=""' in body
@@ -330,14 +331,14 @@ def test_sheet_name_with_pii_is_renamed_with_references(tmp_path):
              "<c:f>'ООО «Ромашка»'!$C$1</c:f></c:numRef></c:val></c:ser></c:chart></c:chartSpace>")
     src = _book_with(tmp_path, {"xl/charts/chart1.xml": chart}, workbook=workbook)
     dst = tmp_path / "o.xlsx"
-    mapping = xlsx.mask_workbook(src, dst, Masker(types=("ORG",), ner=False))
-    assert xlsx.sheet_names(dst) == ["{{ORG_1}}"]
+    mapping = XLSX.mask(src, dst, Masker(types=("ORG",), ner=False))
+    assert XLSX.sheet_names(dst) == ["{{ORG_1}}"]
     assert "'{{ORG_1}}'!$A$1</definedName>" in _part_text(dst, "xl/workbook.xml")
     assert "<c:f>'{{ORG_1}}'!$C$1</c:f>" in _part_text(dst, "xl/charts/chart1.xml")
 
     restored = tmp_path / "r.xlsx"
-    xlsx.unmask_workbook(dst, restored, mapping)
-    assert xlsx.sheet_names(restored) == ["ООО «Ромашка»"]
+    XLSX.unmask(dst, restored, mapping)
+    assert XLSX.sheet_names(restored) == ["ООО «Ромашка»"]
     assert "<c:f>'ООО «Ромашка»'!$C$1</c:f>" in _part_text(restored, "xl/charts/chart1.xml")
 
 
@@ -366,7 +367,7 @@ def test_comment_text_and_author_are_masked(tmp_path):
                    '<?xml version="1.0"?><sst><si><t>Итого</t></si></sst>')
         z.writestr("xl/comments1.xml", comments)
     dst = tmp_path / "o.xlsx"
-    xlsx.mask_workbook(path, dst, Masker(types=("ORG", "PERSON")))
+    XLSX.mask(path, dst, Masker(types=("ORG", "PERSON")))
     body = zipfile.ZipFile(dst).read("xl/comments1.xml").decode("utf-8")
     assert "Ромашка" not in body
     assert "Петров" not in body
@@ -386,7 +387,7 @@ def test_document_author_is_cleared(tmp_path):
                    '<?xml version="1.0"?><sst><si><t>Итого</t></si></sst>')
         z.writestr("docProps/core.xml", core)
     dst = tmp_path / "o.xlsx"
-    xlsx.mask_workbook(path, dst, Masker(types=("PERSON",)))
+    XLSX.mask(path, dst, Masker(types=("PERSON",)))
     body = zipfile.ZipFile(dst).read("docProps/core.xml").decode("utf-8")
     assert "Петров" not in body and "Сидорова" not in body
 
@@ -399,7 +400,7 @@ def test_unchanged_cell_keeps_rich_text_runs(tmp_path):
         z.writestr("[Content_Types].xml", CONTENT_TYPES)
         z.writestr("xl/sharedStrings.xml", sst)
     dst = tmp_path / "o.xlsx"
-    xlsx.rewrite(path, dst, ["Итого"])          # значение то же самое
+    XLSX.rewrite(path, dst, ["Итого"])          # значение то же самое
     body = zipfile.ZipFile(dst).read("xl/sharedStrings.xml").decode("utf-8")
     assert body.count("<t>") == 2, "раны должны остаться на месте"
 
@@ -417,10 +418,10 @@ def test_workbook_supplies_supported_names(tmp_path):
                                   "Постфильтр минерализатор Аквабрис",
                                   "ИП Метелина"])
     dst = tmp_path / "out.xlsx"
-    xlsx.mask_workbook(src, dst, Masker(types=("PERSON", "ORG"),
+    XLSX.mask(src, dst, Masker(types=("PERSON", "ORG"),
                                         ner_org_needs_form=True,
                                         ner_person_needs_fio=True))
-    out = xlsx.cell_texts(dst)
+    out = XLSX.texts(dst)
     assert "Метелина" not in " ".join(out), "фамилия контрагента утекла"
     assert "Аквабрис" in out[1], "марка товара не должна маскироваться"
 
@@ -428,7 +429,7 @@ def test_workbook_supplies_supported_names(tmp_path):
 def test_supported_names_scans_legal_form_cells(tmp_path):
     src = _book(tmp_path, shared=['ООО "Ромашка"', "ИП Метелина Лилия Вячеславовна",
                                   "Аквабрис"])
-    names = xlsx.supported_names(src)
+    names = XLSX.supported_names(src)
     assert "метелина" in names and "ромашка" in names
     assert "аквабрис" not in names
 
@@ -463,14 +464,14 @@ def test_strict_inn_masks_labelled_neighbour(tmp_path):
 
     path = _grid_book(tmp_path / "req.xlsx",
                       {"A9": "ИНН", "B9": "6083778353", "C20": "1063391630"})
-    labelled = xlsx.labelled_numbers(path)
+    labelled = XLSX.labels(path)
     assert "6083778353" in labelled, "ИНН рядом с подписью должен быть доверенным"
     assert "1063391630" not in labelled, "одинокий артикул подписи не имеет"
 
     dst = tmp_path / "o.xlsx"
     masker = Masker(types=("INN",), inn_needs_label=True)
-    xlsx.mask_workbook(path, dst, masker)
-    out = xlsx.cell_texts(dst)
+    XLSX.mask(path, dst, masker)
+    out = XLSX.texts(dst)
     assert "6083778353" not in out, "настоящий ИНН утек"
     assert "1063391630" in out, "артикул маскировать не надо"
     # подсказки одной книги не должны доставаться следующей
@@ -492,8 +493,8 @@ def test_requisites_next_to_label_cell_masked(tmp_path):
         cells[f"A{row}"], cells[f"B{row}"] = label, number
     path = _grid_book(tmp_path / "req3.xlsx", cells)
     dst = tmp_path / "o3.xlsx"
-    xlsx.mask_workbook(path, dst, Masker(types=presets.get("accounting").types, ner=False))
-    out = xlsx.cell_texts(dst)
+    XLSX.mask(path, dst, Masker(types=presets.get("accounting").types, ner=False))
+    out = XLSX.texts(dst)
     for _, number in pairs:
         assert number not in out, f"реквизит у подписи в соседней ячейке утек: {number}"
     assert {"Р/с", "КПП", "БИК"} <= set(out), "подписи маскировать не надо"
@@ -517,7 +518,7 @@ def _mask_part(tmp_path, parts, types, part):
 
     src = _with_parts(_book(tmp_path, shared=["Товар"]), parts)
     dst = tmp_path / "out.xlsx"
-    xlsx.mask_workbook(src, dst, Masker(types=types))
+    XLSX.mask(src, dst, Masker(types=types))
     return zipfile.ZipFile(dst).read(part).decode("utf-8")
 
 
@@ -575,7 +576,7 @@ def _mask_sheet(tmp_path, shared, rows) -> str:
 
     src = _raw_sheet_book(tmp_path / "in.xlsx", shared, rows)
     dst = tmp_path / "out.xlsx"
-    xlsx.mask_workbook(src, dst, Masker(ner=False))
+    XLSX.mask(src, dst, Masker(ner=False))
     return zipfile.ZipFile(dst).read("xl/worksheets/sheet1.xml").decode("utf-8")
 
 
@@ -637,7 +638,7 @@ def test_column_header_labelled_numbers(tmp_path):
         2: '<c r="A2"><v>123</v></c>',
         3: '<c r="A3"><v>124</v></c>',
         40: '<c r="A40"><v>777</v></c>'})
-    labelled = xlsx.labelled_numbers(path)
+    labelled = XLSX.labels(path)
     assert {"123", "124", "777"} <= set(labelled)
     assert labelled["777"][0] == "PERSON_ID"
 
@@ -649,12 +650,12 @@ def test_unmask_workbook_restores_text_and_numbers(tmp_path):
     src = _book(tmp_path, shared=["ООО «Ромашка»"], inline=["Петров Иван Сергеевич"],
                 numbers=["771945678122", "7"])
     masked = tmp_path / "book.masked.xlsx"
-    mapping = xlsx.mask_workbook(src, masked, Masker(types=("ORG", "PERSON", "INN")))
-    assert "771945678122" not in xlsx.cell_texts(masked)
+    mapping = XLSX.mask(src, masked, Masker(types=("ORG", "PERSON", "INN")))
+    assert "771945678122" not in XLSX.texts(masked)
 
     restored = tmp_path / "book.unmasked.xlsx"
-    xlsx.unmask_workbook(masked, restored, mapping)
-    assert xlsx.cell_texts(restored) == xlsx.cell_texts(src)
+    XLSX.unmask(masked, restored, mapping)
+    assert XLSX.texts(restored) == XLSX.texts(src)
     sheet = zipfile.ZipFile(restored).read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert '<c r="C1"><v>771945678122</v></c>' in sheet
     assert not (tmp_path / "book.unmasked.xlsx.tmp").exists()
@@ -666,11 +667,11 @@ def test_unmask_workbook_restores_number_from_shared_strings(tmp_path):
     mapping = {"version": 1, "labels": {"{{INN_1}}": {
         "type": "INN", "original": "7708123450", "key": "7708123450", "n": 1, "number": True}}}
     dst = tmp_path / "out.xlsx"
-    xlsx.unmask_workbook(src, dst, mapping)
+    XLSX.unmask(src, dst, mapping)
     sheet = zipfile.ZipFile(dst).read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert '<c r="A1"><v>7708123450</v></c>' in sheet
     assert '<c r="A2" t="s"><v>1</v></c>' in sheet, "текстовая ячейка осталась ссылкой на строку"
-    assert "{{INN_1}}" not in xlsx.cell_texts(dst)
+    assert "{{INN_1}}" not in XLSX.texts(dst)
 
 
 def test_unmask_workbook_keeps_text_label_as_text(tmp_path):
@@ -679,6 +680,6 @@ def test_unmask_workbook_keeps_text_label_as_text(tmp_path):
     mapping = {"version": 1, "labels": {"{{INN_1}}": {
         "type": "INN", "original": "7708123450", "key": "7708123450", "n": 1}}}
     dst = tmp_path / "out.xlsx"
-    xlsx.unmask_workbook(src, dst, mapping)
-    assert xlsx.cell_texts(dst) == ["7708123450"]
+    XLSX.unmask(src, dst, mapping)
+    assert XLSX.texts(dst) == ["7708123450"]
     assert "<v>7708123450</v>" not in zipfile.ZipFile(dst).read("xl/worksheets/sheet1.xml").decode()

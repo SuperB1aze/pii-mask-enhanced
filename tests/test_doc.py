@@ -11,9 +11,8 @@ import sys
 import pytest
 
 from pii_mask_enhanced.formats.common import legacy
-from pii_mask_enhanced.formats.word import DOC
+from pii_mask_enhanced.formats.word import DOC, DOCX
 from pii_mask_enhanced.formats.common.legacy import ConvertError
-from pii_mask_enhanced.formats.word import paragraph_texts
 from test_docx import _docx, _para
 
 OLE_HEADER = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 504
@@ -35,7 +34,7 @@ def fake_converter(monkeypatch, tmp_path):
 
     def convert(src, outdir, fmt="docx", soffice=None):
         if fmt == "doc":
-            seen["to_doc"] = paragraph_texts(src)
+            seen["to_doc"] = DOCX.texts(src)
             return _ole(outdir / f"{src.stem}.doc")
         seen["src"] = src
         dst = outdir / f"{src.stem}.docx"
@@ -50,7 +49,7 @@ def fake_converter(monkeypatch, tmp_path):
 def test_converts_and_removes_temporary_copy(tmp_path, fake_converter):
     src = _ole(tmp_path / "договор с пробелом.doc")
     with DOC.as_new(src) as converted:
-        assert paragraph_texts(converted) == ["Директор Соколова Анна Владимировна"]
+        assert DOCX.texts(converted) == ["Директор Соколова Анна Владимировна"]
     # временная копия содержит незамаскированные ПД - после выхода ее нет
     assert not fake_converter["dst"].exists()
     assert not fake_converter["src"].exists()
@@ -148,7 +147,7 @@ def test_cli_masks_doc_into_docx_by_output_name(tmp_path, fake_converter):
     src = _ole(tmp_path / "contract.doc")
     out = tmp_path / "contract.masked.docx"
     assert _run_cli(["mask", str(src), "--types", "PERSON", "-o", str(out)]) == 0
-    assert "{{PERSON_1}}" in " ".join(paragraph_texts(out))
+    assert "{{PERSON_1}}" in " ".join(DOCX.texts(out))
     assert "to_doc" not in fake_converter
 
 
@@ -209,7 +208,7 @@ def test_real_word_roundtrip(tmp_path, monkeypatch):
     assert src_doc.read_bytes()[:8] == OLE_HEADER[:8]
 
     with DOC.as_new(src_doc) as converted:
-        assert [t for t in paragraph_texts(converted) if t.strip()] == paras
+        assert [t for t in DOCX.texts(converted) if t.strip()] == paras
 
 
 def test_cli_masks_docx_with_doc_extension(tmp_path, fake_converter):

@@ -7,9 +7,9 @@ import zipfile
 from pathlib import Path
 
 from ..common import drawingml
-from ..common.office_xml import (T_RE, cell_label, clear_attrs, counterparty_words, escape, is_label,
-                         mask_values, runs_text, tag, unknown_text_parts, unescape,
-                         unmask_values, write_copy)
+from ..common.base import OfficeFormat
+from ..common.office_xml import (T_RE, cell_label, clear_attrs, escape, is_label, mask_values,
+                                 runs_text, tag, unescape, unmask_values, write_copy)
 from ..common.package import Node, rewrite_units, unit_value
 
 # Контейнеры текстовых узлов <t>: ячейка общей таблицы, ячейка листа, комментарий.
@@ -101,7 +101,7 @@ def _num_value(match: re.Match) -> str:
 
 
 def _kinds_and_values(path: str | Path) -> list[tuple[str, str]]:
-    """Значения книги в порядке cell_texts вместе с видом контейнера."""
+    """Значения книги в порядке Workbook.texts вместе с видом контейнера."""
     out: list[tuple[str, str]] = []
     with zipfile.ZipFile(path) as z:
         for name, kind in _parts(z):
@@ -114,11 +114,6 @@ def _kinds_and_values(path: str | Path) -> list[tuple[str, str]]:
                 else:
                     out.extend((kind, v) for v in _item_values(item.group(1), kind))
     return out
-
-
-def cell_texts(path: str | Path) -> list[str]:
-    """Весь текст книги, который мы умеем обезличивать, в устойчивом порядке."""
-    return [value for _, value in _kinds_and_values(path)]
 
 
 def _rewrite_num_cell(match: re.Match, new: str) -> bytes:
@@ -189,14 +184,6 @@ _SOURCE_SHEET_RE = re.compile(rb"""(<(?:\w+:)?worksheetSource\s[^>]*?\bsheet=)([
 _SHEET_NAME_MAX = 31
 
 
-def sheet_names(path: str | Path) -> list[str]:
-    """Имена листов книги в порядке workbook.xml."""
-    with zipfile.ZipFile(path) as z:
-        if _WORKBOOK not in z.namelist():
-            return []
-        return [unescape(m.group(3).decode("utf-8")) for m in _SHEET_TAG_RE.finditer(z.read(_WORKBOOK))]
-
-
 def _sheet_ref_re(old: str) -> re.Pattern:
     # 'Имя листа'!A1 (кавычка внутри имени удваивается) и, если имя простое, Имя!A1
     alts = [re.escape("'" + old.replace("'", "''") + "'!")]
@@ -243,50 +230,6 @@ def _new_sheet_names(names: list[str], renamed: list[str]) -> dict[str, str]:
         used.add(new)
         out[old] = new
     return out
-
-
-def rewrite(src: str | Path, dst: str | Path, values: list[str],
-            renames: dict[str, str] | None = None) -> None:
-    """Собрать копию книги с подставленными значениями.
-
-    `values` - результат `cell_texts` для этой же книги, в том же порядке.
-    `renames` - новые имена листов: старое -> новое, вместе со ссылками на них.
-    """
-    src, dst = Path(src), Path(dst)
-    if dst.exists() and src.samefile(dst):
-        # запись в тот же файл стерла бы исходник до чтения
-        raise ValueError("нельзя писать поверх исходной книги - укажи другой файл")
-    have = cell_texts(src)
-    if len(values) != len(have):
-        raise ValueError(
-            f"значений {len(values)}, а текстовых узлов в книге {len(have)} - "
-            "подстановка сдвинулась бы по всей книге")
-
-    cursor = 0
-    with zipfile.ZipFile(src) as zin:
-        # Правим в порядке _parts, как их читал cell_texts, а пишем в порядке архива.
-        done: dict[str, bytes] = {}
-        for name, kind in _parts(zin):
-            blob = done.get(name) or zin.read(name)
-            blob, cursor = _rewrite_part(blob, kind, values, cursor)
-            done[name] = blob
-        for name in zin.namelist():
-            attrs = [a for rx, names in _AUTHOR_ATTRS if rx.match(name) for a in names]
-            rename = bool(renames) and name.startswith("xl/") and name.endswith(".xml")
-            if not attrs and not rename:
-                continue
-            blob = done.get(name) or zin.read(name)
-            new = clear_attrs(blob, tuple(attrs)) if attrs else blob
-            if rename:
-                new = _rename_sheets(new, renames)
-            if new != blob:
-                done[name] = new
-        write_copy(zin, dst, done)
-
-
-def supported_names(src: str | Path) -> frozenset[str]:
-    # слова из ячеек с правовой формой - для строгого режима распознавателя.
-    return counterparty_words(cell_texts(src))
 
 
 # Ячейка листа с координатой: ссылка в общую таблицу (t="s"), текст в листе
@@ -342,50 +285,6 @@ def _header_above(heads: list[tuple[int, str]], row: int) -> str:
     return heads[i - 1][1] if i else ""
 
 
-def labelled_numbers(src: str | Path) -> dict[str, tuple[str, str]]:
-    """Значения, их тип и ключ по подписи: слева ("A9=ИНН", "B9=6083778353") или в шапке
-    колонки - тогда под ней значения всех строк, а не только первой."""
-    out: dict[str, tuple[str, str]] = {}
-    with zipfile.ZipFile(src) as z:
-        shared = []
-        if "xl/sharedStrings.xml" in z.namelist():
-            blob = z.read("xl/sharedStrings.xml")
-            shared = [_item_value(i.group(1), "si") for i in _ITEM_RE["si"].finditer(blob)]
-        for name in (n for n in z.namelist() if re.match(r"^xl/worksheets/[^/]+\.xml$", n)):
-            grid = _sheet_grid(z, name, shared)
-            heads = _column_headers(grid)
-            for (row, col), value in grid.items():
-                header = _header_above(heads.get(col, []), row)
-                for label in (grid.get((row, col - 1), ""), header):
-                    hit = cell_label(label, value)
-                    if hit:
-                        out[value.strip()] = hit
-                        break
-    return out
-
-
-def mask_workbook(src: str | Path, dst: str | Path, masker, mapping: dict | None = None) -> dict:
-    # маскировка xlsx с выводом маппинга
-    with zipfile.ZipFile(src) as z:
-        unknown = unknown_text_parts(z, {n for n, _ in _parts(z)}, _NO_TEXT)
-    if unknown:
-        raise ValueError(f"В книге есть текст, с которым возникла проблема обезличивания: {unknown}, может произойти утечка ПД.")
-
-    pairs = _kinds_and_values(src)
-    values = [value for _, value in pairs]
-    masker = masker.with_hints(counterparty_words(values), labelled_numbers(src))
-    masked, mapping = mask_values(values, masker, mapping)
-    # Числовая ячейка с ПД становится текстовой
-    for (kind, old), new in zip(pairs, masked):
-        if kind == "num" and new != old and new in mapping["labels"]:
-            mapping["labels"][new]["number"] = True
-    # имя листа бывает ФИО ("Соколова А.В.") - маскируется вместе со ссылками на лист
-    names = sheet_names(src)
-    renamed, mapping = mask_values(names, masker, mapping)
-    rewrite(src, dst, masked, _new_sheet_names(names, renamed))
-    return mapping
-
-
 _MASKED_NUM_RE = re.compile(
     rb'<c ([^>]*?) t="inlineStr"><is><t xml:space="preserve">([^<]*)</t></is></c>')
 # Excel при пересохранении переносит метку в общую таблицу строк, в ячейке остается номер строки
@@ -417,22 +316,112 @@ def _restore_numbers(blob: bytes, labels: dict, shared: list[str]) -> bytes:
     return _SHARED_NUM_RE.sub(from_shared, _MASKED_NUM_RE.sub(inline, blob))
 
 
-def unmask_workbook(src: str | Path, dst: str | Path, mapping: dict) -> None:
-    """Вернуть оригиналы в книгу; ячейка, бывшая числом до маскировки, снова число."""
-    src, dst = Path(src), Path(dst)
-    if dst.exists() and src.samefile(dst):
-        raise ValueError("нельзя писать поверх исходной книги - укажи другой файл")
-    labels = mapping.get("labels", {})
-    tmp = dst.with_name(dst.name + ".tmp")
-    with zipfile.ZipFile(src) as zin:
-        shared = ([runs_text(m.group(1)) for m in _ITEM_RE["si"].finditer(zin.read(_SHARED_STRINGS))]
-                  if _SHARED_STRINGS in zin.namelist() else [])
-        done = {name: _restore_numbers(zin.read(name), labels, shared)
-                for name in zin.namelist() if _SHEET_RE.match(name)}
-        write_copy(zin, tmp, done)
-    names = sheet_names(src)
-    renames = {old: new for old, new in zip(names, unmask_values(names, mapping)) if new != old}
-    try:
-        rewrite(tmp, dst, unmask_values(cell_texts(tmp), mapping), renames)
-    finally:
-        tmp.unlink(missing_ok=True)
+class Workbook(OfficeFormat):
+    """Книга Excel: ячейки, примечания, колонтитулы, фигуры, диаграммы, сводные таблицы, имена листов."""
+    where = "в книге"
+    what = "книг"
+    no_text = _NO_TEXT
+    parts = staticmethod(_parts)
+
+    def texts(self, path: str | Path) -> list[str]:
+        return [value for _, value in _kinds_and_values(path)]
+
+    def sheet_names(self, path: str | Path) -> list[str]:
+        """Имена листов книги в порядке workbook.xml."""
+        with zipfile.ZipFile(path) as z:
+            if _WORKBOOK not in z.namelist():
+                return []
+            return [unescape(m.group(3).decode("utf-8"))
+                    for m in _SHEET_TAG_RE.finditer(z.read(_WORKBOOK))]
+
+    def labels(self, path: str | Path) -> dict[str, tuple[str, str]]:
+        """Значения, их тип и ключ по подписи: слева ("A9=ИНН", "B9=6083778353") или в шапке
+        колонки - тогда под ней значения всех строк, а не только первой."""
+        out: dict[str, tuple[str, str]] = {}
+        with zipfile.ZipFile(path) as z:
+            shared = []
+            if _SHARED_STRINGS in z.namelist():
+                blob = z.read(_SHARED_STRINGS)
+                shared = [_item_value(i.group(1), "si") for i in _ITEM_RE["si"].finditer(blob)]
+            for name in (n for n in z.namelist() if _SHEET_RE.match(n)):
+                grid = _sheet_grid(z, name, shared)
+                heads = _column_headers(grid)
+                for (row, col), value in grid.items():
+                    header = _header_above(heads.get(col, []), row)
+                    for label in (grid.get((row, col - 1), ""), header):
+                        hit = cell_label(label, value)
+                        if hit:
+                            out[value.strip()] = hit
+                            break
+        return out
+
+    def rewrite(self, src: str | Path, dst: str | Path, values: list[str],
+                renames: dict[str, str] | None = None) -> None:
+        """Собрать копию книги с подставленными значениями.
+
+        `values` - результат `texts` для этой же книги, в том же порядке.
+        `renames` - новые имена листов: старое -> новое, вместе со ссылками на них.
+        """
+        src, dst = Path(src), Path(dst)
+        self._check_rewrite(src, dst, values)
+
+        cursor = 0
+        with zipfile.ZipFile(src) as zin:
+            # Правим в порядке _parts, как их читал texts, а пишем в порядке архива.
+            done: dict[str, bytes] = {}
+            for name, kind in _parts(zin):
+                blob = done.get(name) or zin.read(name)
+                blob, cursor = _rewrite_part(blob, kind, values, cursor)
+                done[name] = blob
+            for name in zin.namelist():
+                attrs = [a for rx, names in _AUTHOR_ATTRS if rx.match(name) for a in names]
+                rename = bool(renames) and name.startswith("xl/") and name.endswith(".xml")
+                if not attrs and not rename:
+                    continue
+                blob = done.get(name) or zin.read(name)
+                new = clear_attrs(blob, tuple(attrs)) if attrs else blob
+                if rename:
+                    new = _rename_sheets(new, renames)
+                if new != blob:
+                    done[name] = new
+            write_copy(zin, dst, done)
+
+    def mask(self, src: str | Path, dst: str | Path, masker, mapping: dict | None = None) -> dict:
+        # маскировка xlsx с выводом маппинга
+        with zipfile.ZipFile(src) as z:
+            self._check_known(z)
+
+        pairs = _kinds_and_values(src)
+        values = [value for _, value in pairs]
+        masked, mapping, masker = self._mask_texts(values, masker, mapping, self.labels(src))
+        # Числовая ячейка с ПД становится текстовой
+        for (kind, old), new in zip(pairs, masked):
+            if kind == "num" and new != old and new in mapping["labels"]:
+                mapping["labels"][new]["number"] = True
+        # имя листа бывает ФИО ("Соколова А.В.") - маскируется вместе со ссылками на лист
+        names = self.sheet_names(src)
+        renamed, mapping = mask_values(names, masker, mapping)
+        self.rewrite(src, dst, masked, _new_sheet_names(names, renamed))
+        return mapping
+
+    def unmask(self, src: str | Path, dst: str | Path, mapping: dict) -> None:
+        """Вернуть оригиналы в книгу; ячейка, бывшая числом до маскировки, снова число."""
+        src, dst = Path(src), Path(dst)
+        self._check_target(src, dst)
+        labels = mapping.get("labels", {})
+        tmp = dst.with_name(dst.name + ".tmp")
+        with zipfile.ZipFile(src) as zin:
+            shared = ([runs_text(m.group(1)) for m in _ITEM_RE["si"].finditer(zin.read(_SHARED_STRINGS))]
+                      if _SHARED_STRINGS in zin.namelist() else [])
+            done = {name: _restore_numbers(zin.read(name), labels, shared)
+                    for name in zin.namelist() if _SHEET_RE.match(name)}
+            write_copy(zin, tmp, done)
+        names = self.sheet_names(src)
+        renames = {old: new for old, new in zip(names, unmask_values(names, mapping)) if new != old}
+        try:
+            self.rewrite(tmp, dst, unmask_values(self.texts(tmp), mapping), renames)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+
+XLSX = Workbook()

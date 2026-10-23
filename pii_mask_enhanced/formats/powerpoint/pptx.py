@@ -76,9 +76,7 @@ def _finish(zin: zipfile.ZipFile, done: dict[str, bytes]) -> None:
             done[name] = clear_attrs(zin.read(name), _AUTHOR_ATTRS)
 
 
-PPTX = Package("в презентации", _parts, {"text": text_units, "chart": chart_units, "rels": rels_units},
-               render, _NO_TEXT, _finish)
-
-paragraph_texts = PPTX.texts
-mask_presentation = PPTX.mask
-unmask_presentation = PPTX.unmask
+PPTX = Package(
+    where="в презентации", what="презентаций", parts=_parts,
+    units={"text": text_units, "chart": chart_units, "rels": rels_units},
+    render=render, no_text=_NO_TEXT, finish=_finish)

@@ -120,12 +120,8 @@ def _finish(zin: zipfile.ZipFile, done: dict[str, bytes]) -> None:
                 done[name] = cleared
 
 
-DOCX = Package("в документе", _parts, {"text": _text_units, "drawing": drawingml.text_units,
-                                       "chart": drawingml.chart_units, "rels": rels_units},
-               _render, _NO_TEXT, _finish)
-
-paragraph_texts = DOCX.texts
-table_labels = DOCX.table_labels
-rewrite = DOCX.rewrite
-mask_document = DOCX.mask
-unmask_document = DOCX.unmask
+DOCX = Package(
+    where="в документе", what="документов Word", parts=_parts,
+    units={"text": _text_units, "drawing": drawingml.text_units,
+           "chart": drawingml.chart_units, "rels": rels_units},
+    render=_render, no_text=_NO_TEXT, finish=_finish)

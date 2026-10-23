@@ -11,8 +11,8 @@ from ..formats.pdf import extract_text
 
 # текст документа одной строкой
 _READERS = {
-    ".docx": lambda path: "\n".join(word.paragraph_texts(path)),
-    ".pptx": lambda path: "\n".join(powerpoint.paragraph_texts(path)),
+    ".docx": lambda path: "\n".join(word.DOCX.texts(path)),
+    ".pptx": lambda path: "\n".join(powerpoint.PPTX.texts(path)),
     ".pdf": extract_text,
 }
 

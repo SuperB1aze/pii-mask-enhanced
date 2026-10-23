@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, NamedTuple
 
-from .office_xml import (cell_label, counterparty_words, is_label, mask_values, numbers_after_labels,
-                         unescape, unknown_text_parts, unmask_values, write_copy)
+from .base import OfficeFormat
+from .office_xml import cell_label, is_label, numbers_after_labels, unescape, unmask_values, write_copy
 
 
 class Node(NamedTuple):
@@ -199,13 +199,14 @@ def _part_table_labels(blob: bytes) -> dict[str, tuple[str, str]]:
 
 
 @dataclass(frozen=True)
-class Package:
+class Package(OfficeFormat):
     """Формат с абзацами: что в нем читать и как писать обратно."""
-    where: str                                                   # "в документе" - для сообщений
-    parts: Callable[[zipfile.ZipFile], list[tuple[str, str]]]    # части в порядке обхода и их вид
+    where: str
+    what: str
+    parts: Callable[[zipfile.ZipFile], list[tuple[str, str]]]
     units: dict[str, Units]                                      # вид части -> разбор на единицы
     render: Callable[[Node, str], bytes]                         # узел с новым текстом
-    no_text: re.Pattern                                          # части, где текста не бывает
+    no_text: re.Pattern
     finish: Callable[[zipfile.ZipFile, dict[str, bytes]], None]  # вычистить авторов и прочее
 
     def texts(self, path: str | Path) -> list[str]:
@@ -221,7 +222,7 @@ class Package:
                 out.update(_part_table_labels(z.read(name)))
         return out
 
-    def table_labels(self, path: str | Path) -> dict[str, tuple[str, str]]:
+    def labels(self, path: str | Path) -> dict[str, tuple[str, str]]:
         """Значения ячеек таблиц по подписи."""
         with zipfile.ZipFile(path) as z:
             return self._labels(z)
@@ -230,13 +231,7 @@ class Package:
                 replaced: dict[str, bytes] | None = None) -> None:
         # собрать копию файла с подставленными значениями; replaced - части целиком на замену
         src, dst = Path(src), Path(dst)
-        if dst.exists() and src.samefile(dst):
-            raise ValueError("нельзя писать поверх исходного файла - укажите другой файл")
-        have = self.texts(src)
-        if len(values) != len(have):
-            raise ValueError(
-                f"значений {len(values)}, а строк текста {self.where} {len(have)} - "
-                "подстановка сдвинулась бы по всему тексту")
+        self._check_rewrite(src, dst, values)
 
         cursor = 0
         with zipfile.ZipFile(src) as zin:
@@ -268,35 +263,31 @@ class Package:
         # маскировка с выводом маппинга
         with zipfile.ZipFile(src) as z:
             books = self._workbooks(z)
-            unknown = unknown_text_parts(z, {n for n, _ in self.parts(z)} | set(books), self.no_text)
-            if unknown:
-                raise ValueError(f"{self.where.capitalize()} есть текст, с которым возникла проблема "
-                                 f"обезличивания: {unknown}, может произойти утечка ПД.")
+            self._check_known(z, books)
             tables = self._labels(z)
 
         values = self.texts(src)
         # подпись в предыдущей строке и в таблице: слева или в шапке колонки
-        labelled = {**numbers_after_labels(values), **tables}
-        masked, mapping = mask_values(values, masker.with_hints(counterparty_words(values), labelled),
-                                      mapping)
+        masked, mapping, _ = self._mask_texts(values, masker, mapping,
+                                              {**numbers_after_labels(values), **tables})
 
         # книга с данными диаграммы маскируется как обычная книга, с тем же реестром
-        from ..excel.xlsx import mask_workbook
+        from ..excel.xlsx import XLSX
 
         def mask_book(book: Path, out: Path) -> None:
             nonlocal mapping
-            mapping = mask_workbook(book, out, masker, mapping)
+            mapping = XLSX.mask(book, out, masker, mapping)
 
         self.rewrite(src, dst, masked, _embedded(src, books, mask_book))
         return mapping
 
     def unmask(self, src: str | Path, dst: str | Path, mapping: dict) -> None:
         # оригиналы обратно в файл того же формата, в том числе в книги диаграмм
-        from ..excel.xlsx import unmask_workbook
+        from ..excel.xlsx import XLSX
 
         with zipfile.ZipFile(src) as z:
             books = self._workbooks(z)
-        replaced = _embedded(src, books, lambda book, out: unmask_workbook(book, out, mapping))
+        replaced = _embedded(src, books, lambda book, out: XLSX.unmask(book, out, mapping))
         self.rewrite(src, dst, unmask_values(self.texts(src), mapping), replaced)
 
 

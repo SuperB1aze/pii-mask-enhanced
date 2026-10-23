@@ -74,7 +74,8 @@ masker, _ = build_masker(Options(preset="auto"), lambda: text)
 masked, mapping = masker.mask(text)
 restored = masker.unmask(answer, mapping)
 
-mapping = word.mask_document("договор.docx", "договор.masked.docx", masker, mapping)
+mapping = word.DOCX.mask("договор.docx", "договор.masked.docx", masker, mapping)
+word.DOCX.unmask("ответ.docx", "ответ.unmasked.docx", mapping)
 
 # с аудитором
 from pii_mask_enhanced.audit import OllamaAuditor
@@ -83,7 +84,7 @@ masker, _ = build_masker(Options(), lambda: text, OllamaAuditor(url="http://10.0
 masked, mapping = masker.mask_with_audit(text)
 ```
 
-`Options` принимает те же настройки, что флаги CLI. Остальные форматы - в `formats.excel`, `formats.powerpoint` и `formats.pdf`. Если файл обезличить не удается, библиотека выбросит исключение.
+`Options` принимает те же настройки, что флаги CLI. Форматы Office устроены одинаково: `word.DOCX`, `excel.XLSX`, `powerpoint.PPTX` с методами `texts`, `labels`, `mask`, `unmask`; старые `.doc`, `.xls`, `.ppt` - `word.DOC`, `excel.XLS`, `powerpoint.PPT`. PDF - `formats.pdf.extract_text`. Если файл обезличить не удается, библиотека выбросит исключение.
 
 Свой аудитор - любой объект с методами `available() -> bool` и `find(masked_text)`, который возвращает пары «подстрока, тип» (тип из реестра библиотеки, например `PERSONAL`). Подстроки ищутся в тексте буквально и проходят те же фильтры, метки ставит библиотека. Готовые промпт и нарезка текста - `audit.PROMPT` и `audit.chunks`.
 

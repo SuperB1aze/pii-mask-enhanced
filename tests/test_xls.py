@@ -11,8 +11,7 @@ import pytest
 
 from pii_mask_enhanced.formats.common import legacy
 from pii_mask_enhanced.formats.common.legacy import ConvertError
-from pii_mask_enhanced.formats.excel import XLS
-from pii_mask_enhanced.formats.excel import cell_texts
+from pii_mask_enhanced.formats.excel import XLS, XLSX
 from test_doc import OLE_HEADER, _ole, _run_cli
 from test_xlsx import _book
 
@@ -27,7 +26,7 @@ def fake_converter(monkeypatch, tmp_path):
 
     def convert(src, outdir, fmt="xlsx", soffice=None):
         if fmt == "xls":
-            seen["to_xls"] = cell_texts(src)
+            seen["to_xls"] = XLSX.texts(src)
             return _ole(outdir / f"{src.stem}.xls")
         seen["src"] = src
         dst = outdir / f"{src.stem}.xlsx"
@@ -42,7 +41,7 @@ def fake_converter(monkeypatch, tmp_path):
 def test_converts_and_removes_temporary_copy(tmp_path, fake_converter):
     src = _ole(tmp_path / "book.xls")
     with XLS.as_new(src) as converted:
-        assert cell_texts(converted) == ["Почта sokolova@example.ru"]
+        assert XLSX.texts(converted) == ["Почта sokolova@example.ru"]
     assert not fake_converter["dst"].exists()
     assert not fake_converter["src"].exists()
     assert fake_converter["src"].name == "source.xls"
@@ -84,7 +83,7 @@ def test_cli_masks_xls_into_xlsx_by_output_name(tmp_path, fake_converter):
     src = _ole(tmp_path / "list.xls")
     out = tmp_path / "list.masked.xlsx"
     assert _run_cli(["mask", str(src), "--types", "EMAIL", "--no-ner", "-o", str(out)]) == 0
-    assert cell_texts(out) == ["Почта user1@example.com"]
+    assert XLSX.texts(out) == ["Почта user1@example.com"]
     assert "to_xls" not in fake_converter
 
 

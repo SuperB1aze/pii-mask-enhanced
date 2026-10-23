@@ -12,7 +12,7 @@ import zipfile
 import pytest
 
 from pii_mask_enhanced.engine.core import Masker
-from pii_mask_enhanced.formats.powerpoint import pptx
+from pii_mask_enhanced.formats.powerpoint.pptx import PPTX
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -77,7 +77,7 @@ def _pptx(path, slides: list[str], extra: dict[str, str | bytes] | None = None,
 def _masked(tmp_path, slides: list[str], types: tuple[str, ...], extra=None, **kw):
     src = _pptx(tmp_path / "in.pptx", slides, extra)
     dst = tmp_path / "out.pptx"
-    mapping = pptx.mask_presentation(src, dst, Masker(types=types, **kw))
+    mapping = PPTX.mask(src, dst, Masker(types=types, **kw))
     return dst, mapping
 
 
@@ -88,13 +88,13 @@ def _part(path, name: str) -> str:
 def test_reads_paragraph_as_whole(tmp_path):
     """Абзац из кусков читается одной строкой - иначе имя не найти."""
     src = _pptx(tmp_path / "a.pptx", [_slide(_shape([_para(["Соко", "лова Анна ", "Владимировна"])]))])
-    assert pptx.paragraph_texts(src) == ["Соколова Анна Владимировна"]
+    assert PPTX.texts(src) == ["Соколова Анна Владимировна"]
 
 
 def test_masks_name_split_across_runs(tmp_path):
     dst, _ = _masked(tmp_path, [_slide(_shape([_para(["Докладчик Соко", "лова Анна Владимировна"])]))],
                      ("PERSON",))
-    text = " ".join(pptx.paragraph_texts(dst))
+    text = " ".join(PPTX.texts(dst))
     assert "Соколова" not in text
     assert "{{PERSON_1}}" in text
     assert "Докладчик" in text
@@ -105,9 +105,9 @@ def test_line_break_stays_between_lines(tmp_path):
     para = ("<a:p><a:r><a:t>Докладчик:</a:t></a:r><a:br/>"
             "<a:r><a:t>Соколова Анна Владимировна</a:t></a:r></a:p>")
     src = _pptx(tmp_path / "b.pptx", [_slide(_shape([para]))])
-    assert pptx.paragraph_texts(src) == ["Докладчик:", "Соколова Анна Владимировна"]
+    assert PPTX.texts(src) == ["Докладчик:", "Соколова Анна Владимировна"]
     dst = tmp_path / "out.pptx"
-    pptx.mask_presentation(src, dst, Masker(types=("PERSON",)))
+    PPTX.mask(src, dst, Masker(types=("PERSON",)))
     body = _part(dst, "ppt/slides/slide1.xml")
     assert "<a:t>Докладчик:</a:t></a:r><a:br/><a:r><a:t>{{PERSON_1}}</a:t>" in body
 
@@ -139,8 +139,8 @@ def test_slide_order_follows_presentation(tmp_path):
     slides = [_slide(_shape([_para(["Почта first@example.ru"])])),
               _slide(_shape([_para(["Почта second@example.ru"])]))]
     src = _pptx(tmp_path / "o.pptx", slides, order=[2, 1])
-    assert pptx.paragraph_texts(src) == ["Почта second@example.ru", "Почта first@example.ru"]
-    mapping = pptx.mask_presentation(src, tmp_path / "out.pptx", Masker(types=("EMAIL",), ner=False))
+    assert PPTX.texts(src) == ["Почта second@example.ru", "Почта first@example.ru"]
+    mapping = PPTX.mask(src, tmp_path / "out.pptx", Masker(types=("EMAIL",), ner=False))
     assert mapping["labels"]["user1@example.com"]["original"] == "second@example.ru"
 
 
@@ -172,7 +172,7 @@ def test_strict_inn_masks_labelled_table_cell(tmp_path):
              + "</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>")
     dst, _ = _masked(tmp_path, [_slide(table + _shape([_para(["1063391630"])]))], ("INN",),
                      inn_needs_label=True)
-    out = pptx.paragraph_texts(dst)
+    out = PPTX.texts(dst)
     assert "6083778353" not in out, "ИНН рядом с подписью утек"
     assert "1063391630" in out, "одинокий номер без подписи маскировать не надо"
 
@@ -251,25 +251,25 @@ def _chart_deck(tmp_path, book_values: list[str]):
 
 
 def _embedded_texts(path, tmp_path) -> list[str]:
-    from pii_mask_enhanced.formats.excel import xlsx
+    from pii_mask_enhanced.formats.excel.xlsx import XLSX
 
     book = tmp_path / "inner.xlsx"
     book.write_bytes(zipfile.ZipFile(path).read("ppt/embeddings/Microsoft_Excel_Worksheet.xlsx"))
-    return xlsx.cell_texts(book)
+    return XLSX.texts(book)
 
 
 def test_chart_and_its_workbook_are_masked(tmp_path):
     """Кэш диаграммы и книга с ее данными («Изменить данные») - под одной меткой."""
     src = _chart_deck(tmp_path, ["Почта sokolova@example.ru"])
     dst = tmp_path / "out.pptx"
-    mapping = pptx.mask_presentation(src, dst, Masker(types=("EMAIL",), ner=False))
+    mapping = PPTX.mask(src, dst, Masker(types=("EMAIL",), ner=False))
     assert "sokolova@example.ru" not in _part(dst, "ppt/charts/chart1.xml")
     assert "<c:v>Почта user1@example.com</c:v>" in _part(dst, "ppt/charts/chart1.xml")
     assert "Почта user1@example.com" in _embedded_texts(dst, tmp_path)
     assert len(mapping["labels"]) == 1
 
     restored = tmp_path / "restored.pptx"
-    pptx.unmask_presentation(dst, restored, mapping)
+    PPTX.unmask(dst, restored, mapping)
     assert "<c:v>Почта sokolova@example.ru</c:v>" in _part(restored, "ppt/charts/chart1.xml")
     assert "Почта sokolova@example.ru" in _embedded_texts(restored, tmp_path)
 
@@ -286,13 +286,13 @@ def test_smartart_text_is_masked(tmp_path):
 def test_text_outside_paragraph_refuses(tmp_path):
     src = _pptx(tmp_path / "x.pptx", [_slide("<a:t>Соколова</a:t>")])
     with pytest.raises(ValueError, match="вне абзаца"):
-        pptx.mask_presentation(src, tmp_path / "out.pptx", Masker(types=("PERSON",), ner=False))
+        PPTX.mask(src, tmp_path / "out.pptx", Masker(types=("PERSON",), ner=False))
 
 
 def test_refuses_to_write_over_source(tmp_path):
     src = _pptx(tmp_path / "s.pptx", [_slide(_shape([_para(["Итоги"])]))])
     with pytest.raises(ValueError, match="поверх"):
-        pptx.mask_presentation(src, src, Masker(types=("PERSON",), ner=False))
+        PPTX.mask(src, src, Masker(types=("PERSON",), ner=False))
 
 
 def test_unmask_presentation_restores_text(tmp_path):
@@ -301,10 +301,10 @@ def test_unmask_presentation_restores_text(tmp_path):
                             descr="Почта sokolova@example.ru"))]
     src = _pptx(tmp_path / "u.pptx", slides)
     masked = tmp_path / "u.masked.pptx"
-    mapping = pptx.mask_presentation(src, masked, Masker(types=("PERSON", "EMAIL")))
+    mapping = PPTX.mask(src, masked, Masker(types=("PERSON", "EMAIL")))
     restored = tmp_path / "u.unmasked.pptx"
-    pptx.unmask_presentation(masked, restored, mapping)
-    assert pptx.paragraph_texts(restored) == pptx.paragraph_texts(src)
+    PPTX.unmask(masked, restored, mapping)
+    assert PPTX.texts(restored) == PPTX.texts(src)
 
 
 def _run_cli(argv):
@@ -324,8 +324,8 @@ def test_cli_masks_and_unmasks_pptx(tmp_path):
     src = _pptx(tmp_path / "отчет.pptx", [_slide(_shape([_para(["Почта sokolova@example.ru"])]))])
     assert _run_cli(["mask", str(src), "--types", "EMAIL", "--no-ner"]) == 0
     masked = tmp_path / "отчет.masked.pptx"
-    assert pptx.paragraph_texts(masked) == ["Почта user1@example.com"]
+    assert PPTX.texts(masked) == ["Почта user1@example.com"]
     mp = tmp_path / "отчет.mapping.json"
     assert json.loads(mp.read_text(encoding="utf-8"))["labels"]
     assert _run_cli(["unmask", str(masked), "--mapping", str(mp)]) == 0
-    assert pptx.paragraph_texts(tmp_path / "отчет.unmasked.pptx") == ["Почта sokolova@example.ru"]
+    assert PPTX.texts(tmp_path / "отчет.unmasked.pptx") == ["Почта sokolova@example.ru"]

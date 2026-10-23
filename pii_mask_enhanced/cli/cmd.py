@@ -8,7 +8,6 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import Callable, NamedTuple
 
 from ..audit import OllamaAuditor
 from ..config import load_section
@@ -21,21 +20,11 @@ from ..engine.settings import Options, build_masker, type_names
 from .file_ops import FileOperations as ops
 
 from ..formats import excel, powerpoint, word
+from ..formats.common.base import OfficeFormat
 from ..formats.common.legacy import ConvertError
 
-
-class _Office(NamedTuple):
-    """Формат Office Open XML: маскируется и восстанавливается в файл того же формата."""
-    what: str                       # "книг" - для сообщений
-    mask: Callable
-    unmask: Callable
-
-
-_OFFICE = {
-    ".xlsx": _Office("книг", excel.mask_workbook, excel.unmask_workbook),
-    ".docx": _Office("документов Word", word.mask_document, word.unmask_document),
-    ".pptx": _Office("презентаций", powerpoint.mask_presentation, powerpoint.unmask_presentation),
-}
+# Формат Office Open XML: маскируется и восстанавливается в файл того же формата
+_OFFICE = {".xlsx": excel.XLSX, ".docx": word.DOCX, ".pptx": powerpoint.PPTX}
 # старый формат: работаем с его версией в новом
 _LEGACY = {".doc": word.DOC, ".xls": excel.XLS, ".ppt": powerpoint.PPT}
 

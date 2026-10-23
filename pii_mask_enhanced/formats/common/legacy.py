@@ -59,6 +59,34 @@ def pywin32_available() -> bool:
     return True
 
 
+@contextmanager
+def office_app(prog_id: str, quit: Callable[[object], None]) -> Iterator:
+    """Свой экземпляр приложения Office, не открытый пользователем; quit - как его закрыть."""
+    import pythoncom
+    import win32com.client
+
+    pythoncom.CoInitialize()        # без этого COM не работает вне главного потока
+    try:
+        app = win32com.client.DispatchEx(prog_id)
+        try:
+            yield app
+        finally:
+            quit(app)
+    finally:
+        pythoncom.CoUninitialize()
+
+
+@contextmanager
+def com_failure(message: str) -> Iterator[None]:
+    """Ошибка COM - понятной причиной."""
+    import pywintypes
+
+    try:
+        yield
+    except pywintypes.com_error as exc:
+        raise ConvertError(message) from exc
+
+
 def _via_libreoffice(soffice: str, src: Path, outdir: Path, fmt: str) -> Path:
     # Свой профиль на каждый вызов
     profile = (outdir / "lo-profile").as_uri()

@@ -11,8 +11,7 @@ import pytest
 
 from pii_mask_enhanced.formats.common import legacy
 from pii_mask_enhanced.formats.common.legacy import ConvertError
-from pii_mask_enhanced.formats.powerpoint import PPT
-from pii_mask_enhanced.formats.powerpoint import paragraph_texts
+from pii_mask_enhanced.formats.powerpoint import PPT, PPTX
 from test_doc import OLE_HEADER, _ole
 from test_pptx import _para, _pptx, _run_cli, _shape, _slide
 
@@ -27,7 +26,7 @@ def fake_converter(monkeypatch, tmp_path):
 
     def convert(src, outdir, fmt="pptx", soffice=None):
         if fmt == "ppt":
-            seen["to_ppt"] = paragraph_texts(src)
+            seen["to_ppt"] = PPTX.texts(src)
             return _ole(outdir / f"{src.stem}.ppt")
         seen["src"] = src
         dst = outdir / f"{src.stem}.pptx"
@@ -42,7 +41,7 @@ def fake_converter(monkeypatch, tmp_path):
 def test_converts_and_removes_temporary_copy(tmp_path, fake_converter):
     src = _ole(tmp_path / "deck.ppt")
     with PPT.as_new(src) as converted:
-        assert paragraph_texts(converted) == ["Почта sokolova@example.ru"]
+        assert PPTX.texts(converted) == ["Почта sokolova@example.ru"]
     assert not fake_converter["dst"].exists()
     assert not fake_converter["src"].exists()
     assert fake_converter["src"].name == "source.ppt"
@@ -82,7 +81,7 @@ def test_unprotected_current_user_is_converted(tmp_path, fake_converter):
     src = tmp_path / "plain.ppt"
     src.write_bytes(OLE_HEADER + CURRENT_USER + b"\x5f\xc0\x91\xe3")
     with PPT.as_new(src) as converted:
-        assert paragraph_texts(converted) == ["Почта sokolova@example.ru"]
+        assert PPTX.texts(converted) == ["Почта sokolova@example.ru"]
 
 
 def test_missing_converter_is_named(tmp_path, monkeypatch):
@@ -105,7 +104,7 @@ def test_cli_masks_ppt_into_pptx_by_output_name(tmp_path, fake_converter):
     src = _ole(tmp_path / "deck.ppt")
     out = tmp_path / "deck.masked.pptx"
     assert _run_cli(["mask", str(src), "--types", "EMAIL", "--no-ner", "-o", str(out)]) == 0
-    assert paragraph_texts(out) == ["Почта user1@example.com"]
+    assert PPTX.texts(out) == ["Почта user1@example.com"]
     assert "to_ppt" not in fake_converter
 
 

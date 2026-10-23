@@ -21,9 +21,9 @@ ORIGINALS = ["Соколов", "Воронцов", "Ромашка", "sokolova@e
              "Лебедева", "lebedeva"]
 
 FORMATS = [
-    ("report.docx", word.mask_document, word.unmask_document),
-    ("staff.xlsx", excel.mask_workbook, excel.unmask_workbook),
-    ("deck.pptx", powerpoint.mask_presentation, powerpoint.unmask_presentation),
+    ("report.docx", word.DOCX.mask, word.DOCX.unmask),
+    ("staff.xlsx", excel.XLSX.mask, excel.XLSX.unmask),
+    ("deck.pptx", powerpoint.PPTX.mask, powerpoint.PPTX.unmask),
 ]
 
 
