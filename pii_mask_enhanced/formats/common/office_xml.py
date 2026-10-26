@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape as _sax_escape
 
 from ...detection.recognizers.entity import id_doc_key
@@ -11,7 +12,10 @@ from ...detection.recognizers.regulars import ID_DOCS, LABELLED_VALUES
 from ...detection.recognizers.validators import KPP_FORMAT
 from ...detection.registry.entity_types import REQUISITE_WORD, requisite_type
 from ...detection.registry.legal_forms import CELL_FORM
-from ...engine.labels import unmask
+from ...engine.labels import new_mapping, unmask
+
+if TYPE_CHECKING:
+    from ...engine.core import Masker
 
 # Ссылки на символы: числовые (`&#10;` - перевод строки в ячейке) и пять именованных из XML.
 _REF_RE = re.compile(r"&(?:#x([0-9A-Fa-f]+)|#(\d+)|(amp|lt|gt|quot|apos));")
@@ -50,14 +54,18 @@ def unescape(text: str) -> str:
 
     В два прохода `&amp;#10;` сначала стал бы `&#10;`, а потом ошибочно переводом строки.
     """
-    def one(m: re.Match) -> str:
+    out, pos = [], 0
+    for m in _REF_RE.finditer(text):
+        out.append(text[pos:m.start()])
         if m.group(1):
-            return chr(int(m.group(1), 16))
-        if m.group(2):
-            return chr(int(m.group(2)))
-        return _NAMED[m.group(3)]
-
-    return _REF_RE.sub(one, text)
+            out.append(chr(int(m.group(1), 16)))
+        elif m.group(2):
+            out.append(chr(int(m.group(2))))
+        else:
+            out.append(_NAMED[m.group(3)])
+        pos = m.end()
+    out.append(text[pos:])
+    return "".join(out)
 
 
 def escape(text: str, attr: bool = False) -> str:
@@ -205,8 +213,9 @@ def unmask_values(values: list[str], mapping: dict) -> list[str]:
     return [unmask(value, mapping) if value.strip() else value for value in values]
 
 
-def mask_values(values: list[str], masker, mapping: dict | None) -> tuple[list[str], dict]:
+def mask_values(values: list[str], masker: Masker, mapping: dict | None) -> tuple[list[str], dict]:
     """Замаскировать значения по порядку; пустые и пробельные - как есть."""
+    mapping = mapping if mapping is not None else new_mapping()
     masked = []
     for value in values:
         if not value.strip():

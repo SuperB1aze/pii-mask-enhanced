@@ -7,10 +7,11 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Any
 
 # составной файл OLE2 - контейнер старых форматов (и зашифрованных новых)
 OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -30,7 +31,7 @@ MSO_FORCE_DISABLE_MACROS = 3          # msoAutomationSecurityForceDisable
 
 
 class ConvertError(Exception):
-    """Понятная человеку причина, по которой файл не удалось сконвертировать."""
+    """Понятная причина, по которой файл не удалось сконвертировать."""
 
 
 def find_soffice(configured: str | Path | None = None) -> str | None:
@@ -60,7 +61,7 @@ def pywin32_available() -> bool:
 
 
 @contextmanager
-def office_app(prog_id: str, quit: Callable[[object], None]) -> Iterator:
+def office_app(prog_id: str, quit: Callable[[Any], None]) -> Generator[Any, None, None]:
     """Свой экземпляр приложения Office, не открытый пользователем; quit - как его закрыть."""
     import pythoncom
     import win32com.client
@@ -77,7 +78,7 @@ def office_app(prog_id: str, quit: Callable[[object], None]) -> Iterator:
 
 
 @contextmanager
-def com_failure(message: str) -> Iterator[None]:
+def com_failure(message: str) -> Generator[None, None, None]:
     """Ошибка COM - понятной причиной."""
     import pywintypes
 
@@ -156,7 +157,7 @@ class LegacyFormat:
                 raise ConvertError(f"результат конвертации не похож на {self.title}")
 
     @contextmanager
-    def as_new(self, src: str | Path, soffice: str | Path | None = None) -> Iterator[Path]:
+    def as_new(self, src: str | Path, soffice: str | Path | None = None) -> Generator[Path, None, None]:
         """Путь к версии файла в новом формате; промежуточные файлы удаляются при выходе.
 
         Промежуточный файл содержит незамаскированные ПД, поэтому живет только во

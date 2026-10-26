@@ -130,7 +130,7 @@ class Masker:
         mapping: dict | None = None,
         extra_entities: list[Entity] | None = None,
     ) -> tuple[str, dict]:
-        mapping = copy.deepcopy(mapping) if mapping else {"version": 1, "labels": {}}
+        mapping = copy.deepcopy(mapping) if mapping else lbl.new_mapping()
 
         # Ищем по нормализованному тексту, отдаем исходный (см. _TYPO_TWINS).
         source = text
@@ -173,13 +173,11 @@ class Masker:
         return candidates
 
     def _propagate(self, text: str, candidates: list[Entity]) -> list[Entity]:
-        # Повторы и производные найденного. Порядок шагов важен: каждый следующий
-        # видит находки предыдущих.
+        # Повторы и производные найденного. Порядок шагов важен
         if "PERSON" in self.types:
             candidates += prop.person_token_repeats(text, candidates)
 
-        # номер, опознанный по якорному слову где угодно в тексте, скрывается везде. Дата -
-        # нет: "договор от 15.09.2026" не делает той же датой приказа данные о договоре
+        # номер, опознанный по якорному слову где угодно в тексте, скрывается везде
         anchored = {e.text.strip() for e in candidates
                     if e.source == sources.DOCREF and e.type != "DATE"}
         anchored |= {e.text.strip() for e in candidates
@@ -199,8 +197,7 @@ class Masker:
         candidates += prop.org_case_repeats(text, candidates)
 
         if not self._use_ner:
-            # без NER подтвержденные названия приходят из словаря и по правовой форме,
-            # проверка по словарю общих слов недоступна
+            # без NER подтвержденные названия приходят из словаря и по правовой форме
             return candidates + prop.bracket_aliases(text, candidates)
 
         candidates = prop.without_geo_persons(candidates)
@@ -214,22 +211,19 @@ class Masker:
         return candidates
 
     @staticmethod
+    def _resolve_order(ent: Entity) -> tuple[int, int, int, int]:
+        # словарные сущности, заданные пользователем, важнее любого типа
+        not_from_dict = 0 if ent.source == sources.DICT else 1
+        type_rank = PRIORITY[ent.type]
+        longer_first = -(ent.end - ent.start)
+        leftmost = ent.start
+        return not_from_dict, type_rank, longer_first, leftmost
+
+    @staticmethod
     def _resolve(candidates: list[Entity], occupied: list[tuple[int, int]]) -> list[Entity]:
         taken = list(occupied)
         accepted = []
-        # Словарные сущности важнее любого типа: их задал пользователь, а NER может
-        # ошибиться (например, принять словарное ORG "Ромашка Россия" за PERSON).
-
-        ordered = sorted(
-            candidates,
-            key=lambda e: (
-                0 if e.source == sources.DICT else 1,
-                PRIORITY[e.type],
-                -(e.end - e.start),
-                e.start,
-            ),
-        )
-        for ent in ordered:
+        for ent in sorted(candidates, key=Masker._resolve_order):
             span = (ent.start, ent.end)
             if any(overlaps(span, t) for t in taken):
                 continue

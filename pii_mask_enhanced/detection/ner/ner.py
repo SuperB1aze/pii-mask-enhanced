@@ -73,8 +73,7 @@ class NatashaNer:
 
     def _surname_by_patronymic(self, text: str, found: list[Entity]) -> list[Entity]:
         # Дотянуть спан ФИО до соседней фамилии, когда в нем есть отчество. Ключ - из
-        # нормальной формы имени и фамилии в именительном падеже: "Белоусовой Марины
-        # Сергеевны" и "Белоусова Марина Сергеевна" - одно лицо и одна метка.
+        # нормальной формы имени и фамилии в именительном падеже
         out = []
         for ent in found:
             if ent.type != "PERSON" or not self._has_patronymic(ent.text):

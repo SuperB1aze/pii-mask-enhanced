@@ -17,6 +17,10 @@ FAKE_EMAIL_SCAN_RE = re.compile(r"user\d+@example\.com", re.IGNORECASE)
 UNKNOWN = "[неизвестное значение]"
 
 
+def new_mapping() -> dict:
+    return {"version": 1, "labels": {}}
+
+
 def make_placeholder(etype: str, n: int) -> str:
     if etype == "PHONE":
         return f"+7 {FAKE_PHONE_CODE} {n // 10000:03d}-{n // 100 % 100:02d}-{n % 100:02d}"

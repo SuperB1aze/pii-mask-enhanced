@@ -54,9 +54,9 @@ def _skeleton(value: str) -> str | None:
     return skeleton
 
 
-def _flex_repeats(text: str, src: Entity, taken: set[tuple[int, int]]) -> list[Entity]:
+def _flex_repeats(text: str, src: Entity, skeleton: str, taken: set[tuple[int, int]]) -> list[Entity]:
     # Пропускаем только занятое точно тем же спаном
-    pattern = _FLEX_SEP.join(re.escape(c) for c in _skeleton(src.text))
+    pattern = _FLEX_SEP.join(re.escape(c) for c in skeleton)
     out = []
     for m in re.finditer(rf"(?<!\w){pattern}(?!\w)", text, re.IGNORECASE):
         if m.span() in taken:
@@ -78,8 +78,9 @@ def repeats(text: str, values: set[str], known: list[Entity]) -> list[Entity]:
         if len(value) < 3:
             continue
         src = by_value[value]
-        if src.type != "DATE" and _skeleton(value):
-            out += _flex_repeats(text, src, flex_taken)
+        skeleton = _skeleton(value) if src.type != "DATE" else None
+        if skeleton:
+            out += _flex_repeats(text, src, skeleton, flex_taken)
             continue
         start = 0
         while True:

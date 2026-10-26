@@ -443,3 +443,15 @@ def test_cli_unmask_docx_default_name(tmp_path):
         sys.argv = old
     assert exc.value.code == 0
     assert DOCX.texts(tmp_path / "отчет.unmasked.docx") == ["Подписал Соколова Анна"]
+
+
+def test_document_without_text_gives_empty_mapping(tmp_path):
+    """Без текста маскировать нечего, но маппинг все равно словарь, и unmask с ним работает."""
+    from pii_mask_enhanced.engine.core import Masker
+
+    src = _docx(tmp_path / "e.docx", [_para([" "]), "<w:p/>"])
+    dst = tmp_path / "e.masked.docx"
+    mapping = DOCX.mask(src, dst, Masker(ner=False))
+    assert mapping == {"version": 1, "labels": {}}
+    DOCX.unmask(dst, tmp_path / "e.unmasked.docx", mapping)
+    assert DOCX.texts(tmp_path / "e.unmasked.docx") == DOCX.texts(src)

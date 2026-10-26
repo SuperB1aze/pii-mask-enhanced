@@ -17,7 +17,7 @@ def _via_excel(src: Path, outdir: Path, fmt: str) -> Path:
         excel.EnableEvents = False
         excel.AutomationSecurity = MSO_FORCE_DISABLE_MACROS  # макросы чужого файла не запускаем
         with com_failure("Excel не открыл файл - он защищен паролем или поврежден"):
-            # пароль-заглушка: книга с паролем дает ошибку, а не окно ввода
+            # пароль-заглушка: книга с паролем дает ошибку
             book = excel.Workbooks.Open(str(src), UpdateLinks=0, ReadOnly=True, Password="#",
                                         IgnoreReadOnlyRecommended=True, AddToMru=False,
                                         Notify=False)

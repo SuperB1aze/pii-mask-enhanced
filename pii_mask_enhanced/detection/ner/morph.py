@@ -92,7 +92,7 @@ def looks_like_person(text: str) -> bool:
 
 def _normal(word: str) -> str:
     parses = parse(word)
-    return parses[0].normal if parses else word.lower()
+    return parses[0].normal_form if parses else word.lower()
 
 
 def is_party_role(text: str) -> bool:

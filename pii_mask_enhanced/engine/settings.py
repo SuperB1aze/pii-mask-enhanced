@@ -33,8 +33,7 @@ def type_names(values: Iterable[str] | None) -> tuple[str, ...] | None:
 
 def build_masker(opts: Options, probe: Callable[[], str | None],
                  auditor: Auditor | None = None) -> tuple[Masker, list[str]]:
-    """Masker и пояснения к выбору набора. probe() - текст документа или None, зовется по нужде.
-
+    """Masker и пояснения к выбору набора
     ValueError - неизвестный набор или тип.
     """
     notes: list[str] = []

@@ -126,20 +126,21 @@ def _rewrite_num_cell(match: re.Match, new: str) -> bytes:
 
 
 def _rewrite_part(blob: bytes, kind: str, values: list[str], cursor: int) -> tuple[bytes, int]:
-    def one_num(match: re.Match) -> bytes:
-        nonlocal cursor
-        new, cursor = values[cursor], cursor + 1
-        if new == _num_value(match):
-            return match.group(0)    # ничего не нашлось - число и формула целы
-        return _rewrite_num_cell(match, new)
-
-    if kind == "num":
-        return _ITEM_RE["num"].sub(one_num, blob), cursor
     if kind in _UNITS:
         return rewrite_units(blob, _UNITS[kind](blob), values, cursor, drawingml.render)
 
-    def one(match: re.Match) -> bytes:
-        nonlocal cursor
+    out, pos = [], 0
+    for match in _ITEM_RE[kind].finditer(blob):
+        out.append(blob[pos:match.start()])
+        pos = match.end()
+        whole = match.group(0)
+
+        if kind == "num":
+            new, cursor = values[cursor], cursor + 1
+            # ничего не нашлось - число и формула целы
+            out.append(whole if new == _num_value(match) else _rewrite_num_cell(match, new))
+            continue
+
         body = match.group(1)
         old = _item_value(body, kind)
         if kind == "hf":
@@ -149,29 +150,29 @@ def _rewrite_part(blob: bytes, kind: str, values: list[str], cursor: int) -> tup
             new = "".join(pieces)
         else:
             new, cursor = values[cursor], cursor + 1
-        whole = match.group(0)
-        head = whole[:match.start(1) - match.start(0)]
-        tail = whole[match.end(1) - match.start(0):]
 
         if old == new:
-            return whole      # значение не изменилось - оформление цело
+            out.append(whole)      # значение не изменилось - оформление цело
+            continue
 
+        head = whole[:match.start(1) - match.start(0)]
+        tail = whole[match.end(1) - match.start(0):]
         payload = escape(new).encode("utf-8")
         if kind in _PLAIN:
-            return head + payload + tail
+            out.append(head + payload + tail)
+            continue
 
-        first = True
+        # весь текст ячейки пишем в первый узел, остальные опустошаем
+        runs, run_pos = [], 0
+        for i, t in enumerate(T_RE.finditer(body)):
+            runs.append(body[run_pos:t.start()])
+            runs.append(b'<t xml:space="preserve">' + payload + b"</t>" if i == 0 else b"<t/>")
+            run_pos = t.end()
+        runs.append(body[run_pos:])
+        out.append(head + b"".join(runs) + tail)
 
-        def run(_t: re.Match) -> bytes:
-            nonlocal first
-            if not first:
-                return b"<t/>"      # весь текст ячейки пишем в первый узел
-            first = False
-            return b'<t xml:space="preserve">' + payload + b"</t>"
-
-        return head + T_RE.sub(run, body) + tail
-
-    return _ITEM_RE[kind].sub(one, blob), cursor
+    out.append(blob[pos:])
+    return b"".join(out), cursor
 
 
 # Имя листа: атрибут в workbook.xml и ссылки на лист - в формулах, именованных диапазонах,
@@ -364,6 +365,7 @@ class Workbook(OfficeFormat):
         """
         src, dst = Path(src), Path(dst)
         self._check_rewrite(src, dst, values)
+        renames = renames or {}
 
         cursor = 0
         with zipfile.ZipFile(src) as zin:

@@ -20,7 +20,6 @@ from ..engine.settings import Options, build_masker, type_names
 from .file_ops import FileOperations as ops
 
 from ..formats import excel, powerpoint, word
-from ..formats.common.base import OfficeFormat
 from ..formats.common.legacy import ConvertError
 
 # Формат Office Open XML: маскируется и восстанавливается в файл того же формата
@@ -46,7 +45,7 @@ class CMD:
                 return CMD.mask_legacy(args, src_path, kind)
 
             stem = src_path.with_suffix("") if src_path else None
-            suffix = ".masked" + (".md" if kind in ("", ".pdf") else src_path.suffix)
+            suffix = ".masked" + (src_path.suffix if src_path and kind not in ("", ".pdf") else ".md")
             out = args.output or (f"{stem}{suffix}" if stem else None)
             mapping_path = args.mapping or f"{stem}.mapping.json"
             CMD._check_paths((out, mapping_path, "результат и реестр"),
