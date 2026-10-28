@@ -1,20 +1,10 @@
-"""Ввод-вывод CLI: файлы и stdin/stdout, реестр замен, пробный текст документа."""
+"""Ввод-вывод CLI: файлы и stdin/stdout, реестр замен."""
 from __future__ import annotations
 
 import json
 import os
 import sys
 from pathlib import Path
-
-from ..formats import powerpoint, word
-from ..formats.pdf import extract_text
-
-# текст документа одной строкой
-_READERS = {
-    ".docx": lambda path: "\n".join(word.DOCX.texts(path)),
-    ".pptx": lambda path: "\n".join(powerpoint.PPTX.texts(path)),
-    ".pdf": extract_text,
-}
 
 
 class FileOperations:
@@ -44,16 +34,3 @@ class FileOperations:
         os.chmod(p, 0o600)
         # mapping может содержать персональные данные, поэтому на Unix/Linux системах реализована выдача
         # права 600 (только владелец может читать и писать файл)
-
-    @staticmethod
-    def probe_text(path, kind: str) -> str | None:
-        # Текст документа для определения профиля; None - прочитать не вышло
-
-        try:
-            if kind == ".xlsx":
-                return None
-            if kind in _READERS:
-                return _READERS[kind](path)
-            return FileOperations.read(path)
-        except Exception:                                 # noqa: BLE001
-            return None

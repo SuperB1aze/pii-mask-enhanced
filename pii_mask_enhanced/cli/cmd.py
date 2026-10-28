@@ -2,34 +2,28 @@
 from __future__ import annotations
 
 import argparse
-import functools
 import os
-import shutil
 import sys
-import tempfile
 from pathlib import Path
 
+from .. import api
 from ..audit import OllamaAuditor
 from ..config import load_section
 from ..detection import presets
 from ..detection.registry.entity_types import BY_NAME
-
-from ..engine.core import Masker
-from ..engine.settings import Options, build_masker, type_names
+from ..engine.settings import Options, type_names
 
 from .file_ops import FileOperations as ops
 
-from ..formats import excel, powerpoint, word
-from ..formats.common.legacy import ConvertError
-
-# Формат Office Open XML: маскируется и восстанавливается в файл того же формата
-_OFFICE = {".xlsx": excel.XLSX, ".docx": word.DOCX, ".pptx": powerpoint.PPTX}
-# старый формат: работаем с его версией в новом
-_LEGACY = {".doc": word.DOC, ".xls": excel.XLS, ".ppt": powerpoint.PPT}
+_FILES = (*api.OFFICE, *api.LEGACY)
 
 
 class CliError(Exception):
     """Ошибка для пользователя: обработчик печатает ее в stderr и выходит с кодом 2."""
+
+
+def _note(text: str) -> None:
+    print(text, file=sys.stderr)
 
 
 class CMD:
@@ -41,99 +35,41 @@ class CMD:
 
             src_path = None if args.file == "-" else Path(args.file)
             kind = src_path.suffix.lower() if src_path else ""
-            if src_path is not None and kind in _LEGACY:
-                return CMD.mask_legacy(args, src_path, kind)
-
             stem = src_path.with_suffix("") if src_path else None
-            suffix = ".masked" + (src_path.suffix if src_path and kind not in ("", ".pdf") else ".md")
+            if kind in api.LEGACY:
+                suffix = ".masked" + kind
+            else:
+                suffix = ".masked" + (src_path.suffix if src_path and kind not in ("", ".pdf") else ".md")
             out = args.output or (f"{stem}{suffix}" if stem else None)
             mapping_path = args.mapping or f"{stem}.mapping.json"
             CMD._check_paths((out, mapping_path, "результат и реестр"),
                              (out, args.file, "результат и исходный файл"),
                              (mapping_path, args.file, "реестр и исходный файл"))
 
-            # Текстовый вход читается один раз: stdin второй раз не прочитать, и
-            # без кэша профиль съедал бы весь ввод, а маскировалась пустая строка.
-            source = functools.cache(lambda: ops.read(args.file))
-
-            # текст для профиля нужен и --preset auto, и --auto-profile: читаем один раз
-            @functools.cache
-            def probe() -> str | None:
-                if kind in (*_OFFICE, ".pdf"):
-                    return ops.probe_text(args.file, kind)
-                try:
-                    return source()
-                except Exception:                     # noqa: BLE001
-                    return None
-
-            masker, org_names = CMD._build_masker(args, probe)
+            opts = CMD._options(args)
+            auditor = CMD._auditor(args) if getattr(args, "audit", False) else None
             mapping = ops.load_mapping(mapping_path)  # существующий mapping продолжаем
 
-            if kind in _OFFICE:
-                if args.audit:
-                    raise CliError(f"--audit для {_OFFICE[kind].what} пока не поддержан: "
-                                   "аудитор работает по тексту")
+            if kind in _FILES:
                 if out is None or out == "-":
                     raise CliError("файл этого формата нельзя писать в stdout - укажи -o файл")
-                try:
-                    mapping = _OFFICE[kind].mask(args.file, out, masker, mapping)
-                except ValueError as exc:   # в файле есть то, что не удается обезличить
-                    raise CliError(str(exc)) from exc
+                soffice = CMD._soffice(args) if kind in api.LEGACY else None
+                mapping = api.mask_file(args.file, out, opts, mapping,
+                                        soffice=soffice, auditor=auditor, report=_note)
             else:
-                if kind == ".pdf":
-                    # PDF читаем текстом и текстом же отдаем: собрать PDF обратно нельзя,
-                    # замена другой длины ломает верстку строки (см. pii_mask_enhanced/formats/pdf/pdf.py).
-                    from ..formats.pdf import PdfError, extract_text
-
-                    try:
-                        text = extract_text(args.file)
-                    except PdfError as exc:
-                        raise CliError(str(exc)) from exc
-                else:
-                    text = source()
-                mask = masker.mask_with_audit if args.audit else masker.mask
-                try:
-                    masked, mapping = mask(text, mapping)
-                except RuntimeError as exc:     # аудитор недоступен - fail-closed
-                    raise CliError(str(exc)) from exc
+                text = api.read_text(args.file) if kind == ".pdf" else ops.read(args.file)
+                masked, mapping = api.mask_text(text, opts, mapping, auditor=auditor, report=_note)
                 ops.write(out, masked)
-        except CliError as exc:
+        except (CliError, api.MaskError) as exc:
             print(exc, file=sys.stderr)
             return 2
 
         ops.save_mapping(mapping_path, mapping)
         print(f"замаскировано сущностей: {len(mapping['labels'])}; mapping: {mapping_path}",
               file=sys.stderr)
-        if org_names:
-            CMD._report_org_dict(mapping, org_names)
+        if opts.org_names:
+            CMD._report_org_dict(mapping, opts.org_names)
         return 0
-
-    @staticmethod
-    def mask_legacy(args: argparse.Namespace, src_path: Path, kind: str) -> int:
-        # .doc (.xls, .ppt) переводится во временный .docx (.xlsx, .pptx), маскируется в нем и
-        # сохраняется обратно в старый формат (или в новый, если так задан -o)
-        fmt = _LEGACY[kind]
-        stem = src_path.with_suffix("")
-        out = args.output or f"{stem}.masked{kind}"
-        mapping_path = args.mapping or f"{stem}.mapping.json"
-        CMD._check_paths((out, args.file, "результат и исходный файл"),
-                         (mapping_path, args.file, "реестр и исходный файл"))
-        to_old = Path(out).suffix.lower() == kind
-        soffice = CMD._soffice(args)
-        try:
-            with fmt.as_new(src_path, soffice) as converted, \
-                    tempfile.TemporaryDirectory(prefix="pii-legacy-") as tmp:
-                if converted.suffix.lower() != fmt.new:
-                    converted = Path(shutil.copyfile(converted, Path(tmp) / f"source{fmt.new}"))
-                new_out = str(Path(tmp) / f"masked{fmt.new}") if to_old else out
-                inner = argparse.Namespace(**{**vars(args), "file": str(converted),
-                                              "output": new_out, "mapping": mapping_path})
-                code = CMD.cmd_mask(inner)
-                if code == 0 and to_old:
-                    fmt.save_as_old(new_out, out, soffice)
-                return code
-        except ConvertError as exc:
-            raise CliError(str(exc)) from exc
 
     @staticmethod
     def _settings(args: argparse.Namespace, section: str, env: dict[str, str]) -> dict:
@@ -169,8 +105,8 @@ class CMD:
                 raise CliError(f"{what} - один и тот же путь ({a}); один затрёт другой")
 
     @staticmethod
-    def _build_masker(args: argparse.Namespace, probe) -> tuple[Masker, tuple[str, ...]]:
-        # Настройки Masker из флагов и пресета. probe() - текст документа или None.
+    def _options(args: argparse.Namespace) -> Options:
+        # Настройки Masker из флагов и пресета
         org_names = ()
         if getattr(args, "org_dict", None):
             from ..detection.recognizers.recognizers import load_org_dict
@@ -182,7 +118,7 @@ class CMD:
             supported_names = tuple(line.strip() for line in lines if line.strip())
 
         ner_types = getattr(args, "ner_types", None)
-        opts = Options(
+        return Options(
             preset=getattr(args, "preset", None),
             types=type_names(args.types.split(",") if args.types else None),
             ner=not args.no_ner,
@@ -194,14 +130,6 @@ class CMD:
             org_names=org_names,
             supported_names=supported_names,
         )
-        auditor = CMD._auditor(args) if getattr(args, "audit", False) else None
-        try:
-            masker, notes = build_masker(opts, probe, auditor)
-        except ValueError as exc:
-            raise CliError(str(exc)) from exc
-        for note in notes:
-            print(note, file=sys.stderr)
-        return masker, org_names
 
     @staticmethod
     def _report_org_dict(mapping: dict, org_names: tuple[str, ...]) -> None:
@@ -222,53 +150,22 @@ class CMD:
             return 2
         src_path = Path(args.file)
         kind = src_path.suffix.lower() if args.file != "-" else ""
-        if kind in _OFFICE:
-            return CMD.unmask_office(args, src_path, kind, mapping)
-        if kind in _LEGACY:
-            return CMD.unmask_legacy(args, src_path, kind, mapping)
-        restored = Masker(ner=False).unmask(ops.read(args.file), mapping)
-        ops.write(args.output, restored)
-        return 0
+        if kind not in _FILES:
+            restored = api.unmask_text(ops.read(args.file), mapping)
+            ops.write(args.output, restored)
+            return 0
 
-    @staticmethod
-    def unmask_office(args: argparse.Namespace, src_path: Path, kind: str, mapping: dict) -> int:
         # Книга, документ Word и презентация восстанавливаются в файл того же формата
         stem = src_path.stem.removesuffix(".masked")
-        out = args.output or str(src_path.with_name(f"{stem}.unmasked{src_path.suffix}"))
+        ext = kind if kind in api.LEGACY else src_path.suffix
+        out = args.output or str(src_path.with_name(f"{stem}.unmasked{ext}"))
         if out == "-":
             print("файл этого формата нельзя писать в stdout - укажи -o файл", file=sys.stderr)
             return 2
         try:
-            _OFFICE[kind].unmask(src_path, out, mapping)
-        except ValueError as exc:
-            print(exc, file=sys.stderr)
-            return 2
-        print(f"восстановлено: {out}", file=sys.stderr)
-        return 0
-
-    @staticmethod
-    def unmask_legacy(args: argparse.Namespace, src_path: Path, kind: str, mapping: dict) -> int:
-        # .doc (.xls, .ppt) -> временный .docx (.xlsx, .pptx) -> оригиналы -> снова старый формат
-        fmt = _LEGACY[kind]
-        stem = src_path.stem.removesuffix(".masked")
-        out = args.output or str(src_path.with_name(f"{stem}.unmasked{kind}"))
-        if out == "-":
-            print("файл этого формата нельзя писать в stdout - укажи -o файл", file=sys.stderr)
-            return 2
-        if Path(out) == src_path:
-            print(f"результат и исходный файл - один и тот же путь ({out})", file=sys.stderr)
-            return 2
-        try:
-            soffice = CMD._soffice(args)
-            with fmt.as_new(src_path, soffice) as converted, \
-                    tempfile.TemporaryDirectory(prefix="pii-legacy-") as tmp:
-                restored = Path(tmp) / f"restored{fmt.new}"
-                _OFFICE[fmt.new].unmask(converted, restored, mapping)
-                if Path(out).suffix.lower() == kind:
-                    fmt.save_as_old(restored, out, soffice)
-                else:
-                    shutil.copyfile(restored, out)
-        except (ConvertError, ValueError, CliError) as exc:
+            soffice = CMD._soffice(args) if kind in api.LEGACY else None
+            api.unmask_file(src_path, out, mapping, soffice=soffice)
+        except (CliError, api.MaskError) as exc:
             print(exc, file=sys.stderr)
             return 2
         print(f"восстановлено: {out}", file=sys.stderr)

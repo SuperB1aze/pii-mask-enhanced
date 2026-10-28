@@ -66,6 +66,22 @@ pip install -e ".[dev]"
 
 ## Пример использования в коде
 
+Файл целиком - формат выбирается по расширению, как в CLI:
+
+```python
+from pii_mask_enhanced import MaskError, Options, mask_file, unmask_file, SUPPORTED_EXTENSIONS
+
+try:
+    mapping = mask_file("договор.doc", "договор.masked.doc", Options(preset="auto"))
+    unmask_file("ответ.docx", "ответ.unmasked.docx", mapping)
+except MaskError as exc:
+    print(exc)
+```
+
+`mask_file` возвращает реестр замен (сохранять его - задача вызывающего) и продолжает переданный `mapping`. Для `.doc`, `.xls`, `.ppt` нужен LibreOffice (путь - параметр `soffice`), PDF маскируется в текст. Пояснения к выбору набора приходят в `report` (например, `report=print`). `mask_text` и `unmask_text` - то же для строки. `warm_up()` заранее загружает модели NER, чтобы первый документ не ждал.
+
+Уровнем ниже - Masker и форматы напрямую:
+
 ```python
 from pii_mask_enhanced.engine.settings import Options, build_masker
 from pii_mask_enhanced.formats import word
@@ -156,6 +172,7 @@ pii_mask_enhanced/
   audit/        аудитор: протокол и реализация на Ollama
   formats/      word/ (.docx, .doc), excel/ (.xlsx, .xls), powerpoint/ (.pptx, .ppt), pdf/,
                 common/ - общее для форматов Office и конвертации старых форматов
+  api.py        mask_file, unmask_file - публичный API
   cli/          команда pii-mask
   config.py     файл настроек pii-mask.toml
 ```
