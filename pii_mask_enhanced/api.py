@@ -92,6 +92,8 @@ def mask_file(src: str | Path, dst: str | Path, options: Options | None = None,
             return OFFICE[kind].mask(src, dst, masker, mapping)
         except AuditError as exc:
             raise MaskError(str(exc)) from exc
+        except RuntimeError as exc:  # например, необязательная зависимость httpx не установлена
+            raise MaskError(str(exc)) from exc
         except ValueError as exc:   # в файле есть то, что не удается обезличить
             raise MaskError(str(exc)) from exc
     masked, mapping = mask_text(read_text(src), options, mapping, auditor=auditor, report=report)

@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from pii_mask_enhanced import MaskError, Options, mask_file, mask_text, unmask_file, unmask_text
-from pii_mask_enhanced.audit.base import Auditor
+from pii_mask_enhanced.audit.base import AuditError, Auditor
 from pii_mask_enhanced.formats.word import DOCX
 from test_docx import _docx, _para
 
@@ -25,6 +25,20 @@ class _FindAuditor(Auditor):
 
     def find(self, masked_text):
         return [("Марципан", "SECRET")] if "Код доступа" in masked_text else []
+
+
+class _FailSecondAuditor(Auditor):
+    def __init__(self):
+        self.calls = 0
+
+    def available(self) -> bool:
+        return True
+
+    def find(self, masked_text):
+        self.calls += 1
+        if self.calls == 1:
+            return [("Марципан", "SECRET")]
+        raise AuditError("ошибка второго блока")
 
 
 def test_text_round_trip(tmp_path):
@@ -99,4 +113,19 @@ def test_unavailable_auditor_does_not_write_office_output(tmp_path):
     dst = tmp_path / "g.masked.docx"
     with pytest.raises(MaskError, match="аудитор недоступен"):
         mask_file(src, dst, NO_NER, auditor=_DownAuditor())
+    assert not dst.exists()
+
+
+def test_office_audit_failure_does_not_write_output_or_mutate_mapping(tmp_path):
+    src = _docx(tmp_path / "h.docx", [
+        _para(["Код доступа: Марципан"]),
+        _para(["Второй блок без найденных данных"]),
+    ])
+    dst = tmp_path / "h.masked.docx"
+    mapping = {"version": 1, "labels": {}}
+
+    with pytest.raises(MaskError, match="ошибка второго блока"):
+        mask_file(src, dst, NO_NER, mapping, auditor=_FailSecondAuditor())
+
+    assert mapping == {"version": 1, "labels": {}}
     assert not dst.exists()
