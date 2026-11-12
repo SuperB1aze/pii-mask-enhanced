@@ -106,6 +106,78 @@ masked, mapping = masker.mask_with_audit(text)
 
 Свой аудитор - объект с методами `available() -> bool` и `find(masked_text)`. Предпочтительно возвращать `audit.AuditCandidate(text, type, start, end)`: `start` включается, `end` не включается, позиции считаются в символах Python относительно переданного текста, а диапазон обязан дословно совпадать с `text`. Тип должен быть из реестра библиотеки, например `PERSONAL`. Для совместимости принимаются пары `(подстрока, тип)`, но они маскируют все буквальные вхождения подстроки. Кандидаты проходят фильтры библиотеки, метки ставит библиотека. Пустой результат означает, что находок нет. Аудитор обязан обработать весь текст; при сбое запроса или некорректном ответе он должен поднять `audit.AuditError`, а не возвращать частичный результат. При включённом аудите ошибка останавливает маскировку. Не включайте исходный текст документа в сообщения об ошибках и логи. Готовые промпт и нарезка текста - `audit.PROMPT` и `audit.chunks`.
 
+### HTTP-адаптер собственного аудитора
+
+Пример ниже предполагает, что API принимает `{"text": "..."}` и возвращает `{"entities": [{"text": "...", "type": "PERSON", "start": 0, "end": 4}]}`. Формат запроса и разбора ответа нужно заменить на формат конкретного провайдера. Позиции ответа должны относиться к исходному тексту запроса, а возвращаемый текст обязан точно совпадать с указанным диапазоном.
+
+```python
+import os
+
+import httpx
+
+from pii_mask_enhanced import Options, mask_file
+from pii_mask_enhanced.audit import AuditCandidate, AuditError
+
+
+class HttpAuditor:
+    def __init__(self, url: str, api_key: str, timeout: float = 60.0):
+        self.url = url.rstrip("/")
+        self.timeout = timeout
+        self.headers = {"Authorization": f"Bearer {api_key}"}
+
+    def available(self) -> bool:
+        try:
+            with httpx.Client(timeout=3.0) as client:
+                response = client.get(f"{self.url}/health", headers=self.headers)
+                response.raise_for_status()
+            return True
+        except httpx.HTTPError:
+            return False
+
+    def find(self, masked_text: str) -> list[AuditCandidate]:
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(
+                    f"{self.url}/audit",
+                    headers=self.headers,
+                    json={"text": masked_text},
+                )
+                response.raise_for_status()
+                rows = response.json()["entities"]
+                if not isinstance(rows, list):
+                    raise ValueError("entities должен быть списком")
+
+                candidates = []
+                for row in rows:
+                    text = row["text"]
+                    etype = row["type"]
+                    start, end = row["start"], row["end"]
+                    if not isinstance(text, str) or not isinstance(etype, str):
+                        raise ValueError("text и type должны быть строками")
+                    if not isinstance(start, int) or isinstance(start, bool):
+                        raise ValueError("start должен быть целым числом")
+                    if not isinstance(end, int) or isinstance(end, bool):
+                        raise ValueError("end должен быть целым числом")
+                    candidates.append(AuditCandidate(text, etype, start, end))
+                return candidates
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            # Не добавляйте masked_text или тело ответа в сообщение об ошибке.
+            raise AuditError("ошибка HTTP-аудита или некорректный ответ API") from exc
+
+
+auditor = HttpAuditor(
+    url="https://audit.example.com",
+    api_key=os.environ["PII_AUDIT_API_KEY"],
+)
+mapping = mask_file("input.docx", "input.masked.docx", Options(), auditor=auditor)
+```
+
+`available()` — только предварительная проверка: доступность может измениться до `find()`. При сетевой ошибке, неполном ответе или некорректных данных `find()` должен поднять `AuditError`; возвращать частичный список нельзя. Неизвестные типы библиотека нормализует по своим правилам, поэтому адаптеру следует возвращать типы из реестра.
+
+### Передача текста внешнему API
+
+Аудитор получает текст после первого прохода маскировки, но в нём всё ещё могут оставаться персональные или чувствительные данные. До включения внешнего провайдера проверьте, разрешена ли такая передача для ваших документов и настроек хранения/обработки данных у провайдера. Для удалённого API используйте HTTPS.
+
 Библиотека не читает переменные окружения: настройки передаются параметрами. `OllamaAuditor.from_config(path)` берет их из секции `[audit]` файла настроек (см. ниже).
 
 ## CLI
