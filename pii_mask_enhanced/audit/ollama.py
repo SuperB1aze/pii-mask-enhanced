@@ -67,7 +67,10 @@ class OllamaAuditor:
                                 f"{self.url}/api/chat",
                                 json={
                                     "model": self.model,
-                                    "messages": [{"role": "user", "content": PROMPT + chunk}],
+                            "messages": [{
+                                "role": "user",
+                                "content": PROMPT + "<document>\n" + chunk + "\n</document>",
+                            }],
                                     "format": SCHEMA,
                                     "stream": False,
                                     "think": False,  # для thinking-моделей (qwen3)
