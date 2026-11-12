@@ -9,6 +9,15 @@ import pytest
 
 from pii_mask_enhanced.formats.excel import xlsx
 from pii_mask_enhanced.formats.excel.xlsx import XLSX
+from pii_mask_enhanced.engine.core import Masker
+
+
+class _FindAuditor:
+    def available(self):
+        return True
+
+    def find(self, masked_text):
+        return [("Марципан", "SECRET")] if "Код доступа" in masked_text else []
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -58,6 +67,17 @@ def _book(tmp_path, shared: list[str], inline: list[str] = (), numbers: list[str
         z.writestr("xl/sharedStrings.xml", sst)
         z.writestr("xl/worksheets/sheet1.xml", sheet)
     return path
+
+
+def test_auditor_masks_xlsx_cell(tmp_path):
+    src = _book(tmp_path, shared=["Код доступа: Марципан"])
+    dst = tmp_path / "audited.xlsx"
+    masker = Masker(types=("PHONE",), ner=False, auditor=_FindAuditor())
+
+    mapping = XLSX.mask(src, dst, masker)
+
+    assert XLSX.texts(dst) == ["Код доступа: {{SECRET_1}}"]
+    assert mapping["labels"]["{{SECRET_1}}"]["original"] == "Марципан"
 
 
 def test_reads_shared_and_inline_strings(tmp_path):

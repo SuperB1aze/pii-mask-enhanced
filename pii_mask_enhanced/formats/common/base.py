@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Callable, Iterable
 
+from ...audit.base import AuditError
 from .office_xml import counterparty_words, mask_values, unknown_text_parts
 
 
@@ -64,6 +65,8 @@ class OfficeFormat(ABC):
     def _mask_texts(values: list[str], masker, mapping: dict | None,
                     labelled: dict[str, tuple[str, str]]):
         # маскировка строк файла с подсказками из него же; masker с подсказками - для остального файла
+        if masker.auditor is not None and not masker.auditor.available():
+            raise AuditError("аудитор недоступен - маскировка без аудита не выполнена намеренно")
         hinted = masker.with_hints(counterparty_words(values), labelled)
         masked, mapping = mask_values(values, hinted, mapping)
         return masked, mapping, hinted

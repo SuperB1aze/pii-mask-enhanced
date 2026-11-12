@@ -19,6 +19,14 @@ class _DownAuditor(Auditor):
         return []
 
 
+class _FindAuditor(Auditor):
+    def available(self) -> bool:
+        return True
+
+    def find(self, masked_text):
+        return [("Марципан", "SECRET")] if "Код доступа" in masked_text else []
+
+
 def test_text_round_trip(tmp_path):
     src = tmp_path / "заметка.txt"
     src.write_text("Телефон +7 916 555-12-34", encoding="utf-8")
@@ -70,10 +78,13 @@ def test_unknown_preset_is_mask_error(tmp_path):
         mask_file(src, tmp_path / "d.masked.txt", Options(preset="нет-такого"))
 
 
-def test_auditor_not_supported_for_office(tmp_path):
-    src = _docx(tmp_path / "e.docx", [_para(["текст"])])
-    with pytest.raises(MaskError, match="аудитор"):
-        mask_file(src, tmp_path / "e.masked.docx", NO_NER, auditor=_DownAuditor())
+def test_auditor_masks_docx_text_and_keeps_mapping(tmp_path):
+    src = _docx(tmp_path / "e.docx", [_para(["Код доступа: Марципан"]),
+                                        _para(["Десерт: Марципан"])])
+    dst = tmp_path / "e.masked.docx"
+    mapping = mask_file(src, dst, NO_NER, auditor=_FindAuditor())
+    assert DOCX.texts(dst) == ["Код доступа: {{SECRET_1}}", "Десерт: Марципан"]
+    assert mapping["labels"]["{{SECRET_1}}"]["original"] == "Марципан"
 
 
 def test_unavailable_auditor_is_mask_error(tmp_path):
@@ -81,3 +92,11 @@ def test_unavailable_auditor_is_mask_error(tmp_path):
     src.write_text("Телефон +7 916 555-12-34", encoding="utf-8")
     with pytest.raises(MaskError):
         mask_file(src, tmp_path / "f.masked.txt", NO_NER, auditor=_DownAuditor())
+
+
+def test_unavailable_auditor_does_not_write_office_output(tmp_path):
+    src = _docx(tmp_path / "g.docx", [_para(["обычный текст"])])
+    dst = tmp_path / "g.masked.docx"
+    with pytest.raises(MaskError, match="аудитор недоступен"):
+        mask_file(src, dst, NO_NER, auditor=_DownAuditor())
+    assert not dst.exists()

@@ -14,6 +14,15 @@ import pytest
 from pii_mask_enhanced.engine.core import Masker
 from pii_mask_enhanced.formats.powerpoint.pptx import PPTX
 
+
+class _FindAuditor:
+    def available(self):
+        return True
+
+    def find(self, masked_text):
+        return [("Марципан", "SECRET")] if "Код доступа" in masked_text else []
+
+
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -72,6 +81,19 @@ def _pptx(path, slides: list[str], extra: dict[str, str | bytes] | None = None,
         for name, blob in (extra or {}).items():
             z.writestr(name, blob)
     return path
+
+
+def test_auditor_masks_pptx_text(tmp_path):
+    src = _pptx(tmp_path / "auditor.pptx", [_slide(_shape([
+        _para(["Код доступа: Марципан"]), _para(["Десерт: Марципан"]),
+    ]))])
+    dst = tmp_path / "audited.pptx"
+    masker = Masker(types=("PHONE",), ner=False, auditor=_FindAuditor())
+
+    mapping = PPTX.mask(src, dst, masker)
+
+    assert PPTX.texts(dst) == ["Код доступа: {{SECRET_1}}", "Десерт: Марципан"]
+    assert mapping["labels"]["{{SECRET_1}}"]["original"] == "Марципан"
 
 
 def _masked(tmp_path, slides: list[str], types: tuple[str, ...], extra=None, **kw):

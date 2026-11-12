@@ -87,12 +87,11 @@ def mask_file(src: str | Path, dst: str | Path, options: Options | None = None,
     if kind in LEGACY:
         return _mask_legacy(src, dst, kind, options, mapping, soffice, auditor, report)
     if kind in OFFICE:
-        if auditor:
-            raise MaskError(f"аудитор для {OFFICE[kind].what} пока не поддержан: "
-                            "он работает по тексту")
-        masker = _masker(options, lambda: _probe(src, kind), None, report)
+        masker = _masker(options, lambda: _probe(src, kind), auditor, report)
         try:
             return OFFICE[kind].mask(src, dst, masker, mapping)
+        except AuditError as exc:
+            raise MaskError(str(exc)) from exc
         except ValueError as exc:   # в файле есть то, что не удается обезличить
             raise MaskError(str(exc)) from exc
     masked, mapping = mask_text(read_text(src), options, mapping, auditor=auditor, report=report)

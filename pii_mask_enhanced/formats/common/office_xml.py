@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from xml.sax.saxutils import escape as _sax_escape
 
+from ...audit.base import to_entities
 from ...detection.recognizers.entity import id_doc_key
 from ...detection.recognizers.regulars import ID_DOCS, LABELLED_VALUES
 from ...detection.recognizers.validators import KPP_FORMAT
@@ -214,7 +215,11 @@ def unmask_values(values: list[str], mapping: dict) -> list[str]:
 
 
 def mask_values(values: list[str], masker: Masker, mapping: dict | None) -> tuple[list[str], dict]:
-    """Замаскировать значения по порядку; пустые и пробельные - как есть."""
+    """Замаскировать текстовые блоки Office; аудировать каждый блок отдельно.
+
+    Отдельная обработка сохраняет привязку находки к исходному абзацу/ячейке и
+    исключает буквальные совпадения в других блоках документа.
+    """
     mapping = mapping if mapping is not None else new_mapping()
     masked = []
     for value in values:
@@ -222,5 +227,9 @@ def mask_values(values: list[str], masker: Masker, mapping: dict | None) -> tupl
             masked.append(value)
             continue
         out, mapping = masker.mask(value, mapping)
+        if masker.auditor is not None:
+            extras = to_entities(out, masker.auditor.find(out))
+            if extras:
+                out, mapping = masker.mask(out, mapping, extra_entities=extras)
         masked.append(out)
     return masked, mapping
