@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 
 from ..config import load_section
-from .base import PROMPT, SCHEMA, chunks
+from .base import AuditError, PROMPT, SCHEMA, chunks
 
 log = logging.getLogger("pii_mask.auditor")
 
@@ -55,29 +55,46 @@ class OllamaAuditor:
 
     def find(self, masked_text: str) -> list[tuple[str, str]]:
         found: list[tuple[str, str]] = []
-        with self._client(self.timeout) as client:
-            for chunk in chunks(masked_text, self.chunk_chars):
+        parts = chunks(masked_text, self.chunk_chars)
+        client = None
+        try:
+            client = self._client(self.timeout)
+            with client:
                 try:
-                    resp = client.post(
-                        f"{self.url}/api/chat",
-                        json={
-                            "model": self.model,
-                            "messages": [{"role": "user", "content": PROMPT + chunk}],
-                            "format": SCHEMA,
-                            "stream": False,
-                            "think": False,  # для thinking-моделей (qwen3)
-                            "keep_alive": self.keep_alive,
-                            "options": {"temperature": 0},
-                        },
-                    )
-                    resp.raise_for_status()
-                    data = json.loads(resp.json()["message"]["content"])
-                except Exception as exc:  # аудит - улучшение recall, не точка отказа
-                    log.warning("auditor chunk failed: %s", exc)
-                    continue
-                found += [(str(item.get("text", "")), str(item.get("type", "OTHER")))
-                          for item in data.get("entities", [])]
-            self._unload(client)
+                    for index, chunk in enumerate(parts, start=1):
+                        try:
+                            resp = client.post(
+                                f"{self.url}/api/chat",
+                                json={
+                                    "model": self.model,
+                                    "messages": [{"role": "user", "content": PROMPT + chunk}],
+                                    "format": SCHEMA,
+                                    "stream": False,
+                                    "think": False,  # для thinking-моделей (qwen3)
+                                    "keep_alive": self.keep_alive,
+                                    "options": {"temperature": 0},
+                                },
+                            )
+                            resp.raise_for_status()
+                            data = json.loads(resp.json()["message"]["content"])
+                            if (not isinstance(data, dict) or
+                                    not isinstance(data.get("entities"), list) or
+                                    any(not isinstance(item, dict) or
+                                        not isinstance(item.get("text"), str) or
+                                        not isinstance(item.get("type"), str)
+                                        for item in data["entities"])):
+                                raise ValueError("неверная структура ответа аудитора")
+                        except Exception as exc:
+                            raise AuditError(
+                                f"аудит не выполнен для фрагмента {index} из {len(parts)}"
+                            ) from exc
+                        found.extend((item["text"], item["type"]) for item in data["entities"])
+                finally:
+                    self._unload(client)
+        except AuditError:
+            raise
+        except Exception as exc:
+            raise AuditError("аудитор не смог обработать документ") from exc
         return found
 
     def _unload(self, client) -> None:

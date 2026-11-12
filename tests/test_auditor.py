@@ -9,7 +9,7 @@ import json
 import httpx
 import pytest
 
-from pii_mask_enhanced.audit import OllamaAuditor
+from pii_mask_enhanced.audit import AuditError, OllamaAuditor
 from pii_mask_enhanced.audit.base import entity_type, to_entities
 from pii_mask_enhanced.engine.core import Masker
 
@@ -93,6 +93,41 @@ def test_unload_failure_does_not_break_audit(monkeypatch):
 
     monkeypatch.setattr(httpx, "Client", lambda **kw: _FailingUnload([]))
     assert OllamaAuditor().find("Иван Петров пришел на встречу.") == []
+
+
+def test_failed_chunk_fails_entire_audit(monkeypatch):
+    """Сбой любого чанка не должен выглядеть как успешный частичный аудит."""
+
+    class _SecondChunkFails(_FakeClient):
+        def __init__(self):
+            super().__init__([], [])
+            self.chat_calls = 0
+
+        def post(self, url, json=None, **kw):
+            if url.endswith("/api/chat"):
+                self.chat_calls += 1
+                if self.chat_calls == 2:
+                    raise OSError("service unavailable")
+            return super().post(url, json=json, **kw)
+
+    monkeypatch.setattr(httpx, "Client", lambda **kw: _SecondChunkFails())
+    with pytest.raises(AuditError, match="фрагмента 2 из 2"):
+        OllamaAuditor(chunk_chars=10).find("Первый фрагмент\n\nВторой фрагмент")
+
+
+def test_malformed_model_response_fails_audit(monkeypatch):
+    class _Malformed(_FakeResponse):
+        def json(self):
+            return {"message": {"content": "not-json"}}
+
+    class _MalformedClient(_FakeClient):
+        def post(self, url, json=None, **kw):
+            self.calls.append((url, json or {}))
+            return _Malformed()
+
+    monkeypatch.setattr(httpx, "Client", lambda **kw: _MalformedClient([]))
+    with pytest.raises(AuditError, match="фрагмента 1 из 1"):
+        OllamaAuditor().find("Оля пришла")
 
 
 def test_find_returns_text_and_type(monkeypatch):

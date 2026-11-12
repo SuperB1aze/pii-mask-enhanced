@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-from .audit.base import Auditor
+from .audit.base import AuditError, Auditor
 from .detection.ner.ner import NatashaNer
 from .engine.core import Masker
 from .engine.settings import Options, build_masker
@@ -63,7 +63,9 @@ def mask_text(text: str, options: Options | None = None, mapping: dict | None = 
     mask = masker.mask_with_audit if auditor else masker.mask
     try:
         return mask(text, mapping)
-    except RuntimeError as exc:     # аудитор недоступен - fail-closed
+    except AuditError as exc:       # аудит не завершился целиком - fail-closed
+        raise MaskError(str(exc)) from exc
+    except RuntimeError as exc:     # например, необязательная зависимость httpx не установлена
         raise MaskError(str(exc)) from exc
 
 

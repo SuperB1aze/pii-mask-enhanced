@@ -15,7 +15,7 @@ from __future__ import annotations
 import copy
 import re
 
-from ..audit.base import Auditor, to_entities
+from ..audit.base import AuditError, Auditor, to_entities
 from ..detection.ner import morph
 from ..detection.ner.ner import NatashaNer
 from ..detection.recognizers.entity import Entity
@@ -247,7 +247,7 @@ class Masker:
         if self.auditor is None:
             raise ValueError("аудит запрошен, но аудитор не задан: Masker(auditor=...)")
         if not self.auditor.available():
-            raise RuntimeError("аудитор недоступен - маскировка без аудита не выполнена намеренно")
+            raise AuditError("аудитор недоступен - маскировка без аудита не выполнена")
         masked, mapping = self.mask(text, mapping)
         extras = to_entities(masked, self.auditor.find(masked))
         if extras:
