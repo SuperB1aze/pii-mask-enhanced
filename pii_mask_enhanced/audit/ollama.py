@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 
 from ..config import load_section
-from .base import AuditError, PROMPT, SCHEMA, chunks
+from .base import AuditCandidate, AuditError, PROMPT, SCHEMA, chunk_ranges
 
 log = logging.getLogger("pii_mask.auditor")
 
@@ -53,24 +53,24 @@ class OllamaAuditor:
         except Exception:
             return False
 
-    def find(self, masked_text: str) -> list[tuple[str, str]]:
-        found: list[tuple[str, str]] = []
-        parts = chunks(masked_text, self.chunk_chars)
+    def find(self, masked_text: str) -> list[AuditCandidate]:
+        found: list[AuditCandidate] = []
+        parts = chunk_ranges(masked_text, self.chunk_chars)
         client = None
         try:
             client = self._client(self.timeout)
             with client:
                 try:
-                    for index, chunk in enumerate(parts, start=1):
+                    for index, (chunk, offset, _) in enumerate(parts, start=1):
                         try:
                             resp = client.post(
                                 f"{self.url}/api/chat",
                                 json={
                                     "model": self.model,
-                            "messages": [{
-                                "role": "user",
-                                "content": PROMPT + "<document>\n" + chunk + "\n</document>",
-                            }],
+                                    "messages": [{
+                                        "role": "user",
+                                        "content": PROMPT + "<document>\n" + chunk + "\n</document>",
+                                    }],
                                     "format": SCHEMA,
                                     "stream": False,
                                     "think": False,  # для thinking-моделей (qwen3)
@@ -84,14 +84,27 @@ class OllamaAuditor:
                                     not isinstance(data.get("entities"), list) or
                                     any(not isinstance(item, dict) or
                                         not isinstance(item.get("text"), str) or
-                                        not isinstance(item.get("type"), str)
+                                        not isinstance(item.get("type"), str) or
+                                        not isinstance(item.get("start"), int) or
+                                        isinstance(item.get("start"), bool) or
+                                        not isinstance(item.get("end"), int) or
+                                        isinstance(item.get("end"), bool)
                                         for item in data["entities"])):
                                 raise ValueError("неверная структура ответа аудитора")
+                            for item in data["entities"]:
+                                start, end, text = item["start"], item["end"], item["text"]
+                                if start < 0 or end <= start or end > len(chunk) or chunk[start:end] != text:
+                                    raise ValueError("границы не совпадают с текстом фрагмента")
+                                found.append(AuditCandidate(
+                                    text=text,
+                                    type=item["type"],
+                                    start=offset + start,
+                                    end=offset + end,
+                                ))
                         except Exception as exc:
                             raise AuditError(
                                 f"аудит не выполнен для фрагмента {index} из {len(parts)}"
                             ) from exc
-                        found.extend((item["text"], item["type"]) for item in data["entities"])
                 finally:
                     self._unload(client)
         except AuditError:

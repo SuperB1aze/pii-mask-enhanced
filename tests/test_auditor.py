@@ -9,7 +9,7 @@ import json
 import httpx
 import pytest
 
-from pii_mask_enhanced.audit import AuditError, OllamaAuditor
+from pii_mask_enhanced.audit import AuditCandidate, AuditError, OllamaAuditor, chunk_ranges
 from pii_mask_enhanced.audit.base import entity_type, to_entities
 from pii_mask_enhanced.engine.core import Masker
 
@@ -131,8 +131,28 @@ def test_malformed_model_response_fails_audit(monkeypatch):
 
 
 def test_find_returns_text_and_type(monkeypatch):
-    _, found = _run(monkeypatch, "жена Оля", [{"text": "Оля", "type": "PERSON"}])
-    assert found == [("Оля", "PERSON")]
+    _, found = _run(monkeypatch, "жена Оля", [{
+        "text": "Оля", "type": "PERSON", "start": 5, "end": 8,
+    }])
+    assert found == [AuditCandidate("Оля", "PERSON", 5, 8)]
+
+
+def test_find_translates_chunk_positions_to_input_positions(monkeypatch):
+    class _ChunkAwareClient(_FakeClient):
+        def post(self, url, json=None, **kw):
+            if url.endswith("/api/chat"):
+                self.calls.append((url, json or {}))
+                content = json["messages"][0]["content"]
+                entities = ([{"text": "Оля", "type": "PERSON", "start": 8, "end": 11}]
+                            if "<document>\nВторой: Оля\n</document>" in content else [])
+                return _FakeResponse(entities)
+            return super().post(url, json=json, **kw)
+
+    monkeypatch.setattr(httpx, "Client", lambda **kw: _ChunkAwareClient([]))
+    text = "Первый абзац\n\nВторой: Оля"
+    found = OllamaAuditor(chunk_chars=15).find(text)
+    start = text.index("Оля")
+    assert found == [AuditCandidate("Оля", "PERSON", start, start + 3)]
 
 
 # --- кандидаты -> находки ---
@@ -149,6 +169,27 @@ def test_candidates_become_every_literal_occurrence():
     text = "Оля пришла. Позвать Олю? Оля ушла."
     found = to_entities(text, [("Оля", "PERSON"), ("Мария", "PERSON"), ("х", "PERSON")])
     assert [(e.start, e.end) for e in found] == [(0, 3), (25, 28)]
+
+
+def test_position_candidate_masks_only_its_reported_occurrence():
+    text = "Оля пришла. Позвать Олю? Оля ушла."
+    start = text.rindex("Оля")
+    found = to_entities(text, [AuditCandidate("Оля", "PERSON", start, start + 3)])
+    assert [(e.start, e.end) for e in found] == [(25, 28)]
+
+
+def test_position_candidate_must_match_text_exactly():
+    with pytest.raises(AuditError, match="некорректные границы"):
+        to_entities("Оля пришла", [AuditCandidate("Оля", "PERSON", 4, 7)])
+
+
+def test_chunk_ranges_point_back_to_original_text():
+    text = "Первый абзац\n\nВторой: Оля"
+    ranges = chunk_ranges(text, size=15)
+    assert [part for part, _, _ in ranges] == ["Первый абзац", "Второй: Оля"]
+    assert [text[start:end] for _, start, end in ranges] == [part for part, _, _ in ranges]
+    second = ranges[1][1]
+    assert text[second + 8:second + 11] == "Оля"
 
 
 # --- подключение к Masker ---
