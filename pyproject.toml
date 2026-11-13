@@ -1,6 +1,6 @@
 [project]
 name = "pii-mask-enhanced"
-version = "1.0.0"
+version = "1.1.0"
 description = "Русскоцентричная библиотека для маскировки персональных данных перед отправкой текста в облачные LLM"
 readme = "README.md"
 requires-python = ">=3.11"
