@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Callable
 
@@ -89,7 +90,9 @@ def mask_file(src: str | Path, dst: str | Path, options: Options | None = None,
     if kind in OFFICE:
         masker = _masker(options, lambda: _probe(src, kind), auditor, report)
         try:
-            return OFFICE[kind].mask(src, dst, masker, mapping)
+            result = OFFICE[kind].mask(src, dst, masker, mapping)
+            bind_mapping_to_file(dst, result)
+            return result
         except AuditError as exc:
             raise MaskError(str(exc)) from exc
         except RuntimeError as exc:  # например, необязательная зависимость httpx не установлена
@@ -98,6 +101,7 @@ def mask_file(src: str | Path, dst: str | Path, options: Options | None = None,
             raise MaskError(str(exc)) from exc
     masked, mapping = mask_text(read_text(src), options, mapping, auditor=auditor, report=report)
     dst.write_text(masked, encoding="utf-8")
+    bind_mapping_to_file(dst, mapping)
     return mapping
 
 
@@ -106,6 +110,7 @@ def unmask_file(src: str | Path, dst: str | Path, mapping: dict, *,
     """Вернуть оригиналы в файл src и записать в dst; Office - в файл того же формата."""
     src, dst = Path(src), Path(dst)
     _check_target(src, dst)
+    validate_mapping_for_file(src, mapping)
     kind = src.suffix.lower()
     try:
         if kind in OFFICE:
@@ -116,6 +121,31 @@ def unmask_file(src: str | Path, dst: str | Path, mapping: dict, *,
             dst.write_text(unmask_text(src.read_text(encoding="utf-8"), mapping), encoding="utf-8")
     except (ConvertError, ValueError) as exc:
         raise MaskError(str(exc)) from exc
+
+
+def bind_mapping_to_file(path: str | Path, mapping: dict) -> str:
+    """Связать mapping с файлом через sidecar-метаданные и вернуть document_id."""
+    document_id = str(uuid.uuid4())
+    ids = mapping.setdefault("document_ids", [])
+    if document_id not in ids:
+        ids.append(document_id)
+    sidecar = Path(f"{path}.pii-id")
+    sidecar.write_text(document_id, encoding="ascii")
+    return document_id
+
+
+def validate_mapping_for_file(path: str | Path, mapping: dict) -> None:
+    """Проверить, что sidecar замаскированного файла принадлежит mapping."""
+    ids = mapping.get("document_ids")
+    if ids is None:  # старый mapping без привязки к файлу
+        return
+    sidecar = Path(f"{path}.pii-id")
+    try:
+        document_id = sidecar.read_text(encoding="ascii").strip()
+    except OSError as exc:
+        raise MaskError(f"не найдены метаданные document_id для файла: {path}") from exc
+    if document_id not in ids:
+        raise MaskError("mapping не соответствует замаскированному файлу (document_id не совпадает)")
 
 
 def _mask_legacy(src: Path, dst: Path, kind: str, options: Options | None, mapping: dict | None,
@@ -134,6 +164,7 @@ def _mask_legacy(src: Path, dst: Path, kind: str, options: Options | None, mappi
                                 soffice=soffice, auditor=auditor, report=report)
             if to_old:
                 fmt.save_as_old(new_out, dst, soffice)
+                bind_mapping_to_file(dst, mapping)
             return mapping
     except ConvertError as exc:
         raise MaskError(str(exc)) from exc

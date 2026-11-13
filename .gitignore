@@ -7,5 +7,6 @@ dist/
 build/
 
 *.mapping.json
+*.pii-id
 *.masked.*
 *.unmasked.*

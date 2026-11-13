@@ -41,7 +41,14 @@ class CMD:
             else:
                 suffix = ".masked" + (src_path.suffix if src_path and kind not in ("", ".pdf") else ".md")
             out = args.output or (f"{stem}{suffix}" if stem else None)
-            mapping_path = args.mapping or f"{stem}.mapping.json"
+            if args.mapping:
+                mapping_path = args.mapping
+            elif out and out != "-":
+                output_path = Path(out)
+                output_stem = output_path.stem.removesuffix(".masked")
+                mapping_path = str(output_path.with_name(f"{output_stem}.mapping.json"))
+            else:
+                mapping_path = f"{stem}.mapping.json"
             CMD._check_paths((out, mapping_path, "результат и реестр"),
                              (out, args.file, "результат и исходный файл"),
                              (mapping_path, args.file, "реестр и исходный файл"))
@@ -60,6 +67,8 @@ class CMD:
                 text = api.read_text(args.file) if kind == ".pdf" else ops.read(args.file)
                 masked, mapping = api.mask_text(text, opts, mapping, auditor=auditor, report=_note)
                 ops.write(out, masked)
+                if out and out != "-":
+                    api.bind_mapping_to_file(out, mapping)
         except (CliError, api.MaskError) as exc:
             print(exc, file=sys.stderr)
             return 2
@@ -151,6 +160,12 @@ class CMD:
         src_path = Path(args.file)
         kind = src_path.suffix.lower() if args.file != "-" else ""
         if kind not in _FILES:
+            if args.file != "-":
+                try:
+                    api.validate_mapping_for_file(src_path, mapping)
+                except api.MaskError as exc:
+                    print(exc, file=sys.stderr)
+                    return 2
             restored = api.unmask_text(ops.read(args.file), mapping)
             ops.write(args.output, restored)
             return 0
