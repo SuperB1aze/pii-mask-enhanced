@@ -52,6 +52,40 @@ def test_text_round_trip(tmp_path):
     assert restored.read_text(encoding="utf-8") == src.read_text(encoding="utf-8")
 
 
+def test_unmask_file_can_verify_document_mapping(tmp_path):
+    src = tmp_path / "verified.txt"
+    masked = tmp_path / "verified.masked.txt"
+    src.write_text("Contact alpha@example.com in section A", encoding="utf-8")
+    mapping = mask_file(src, masked, NO_NER)
+
+    restored = tmp_path / "verified.unmasked.txt"
+    unmask_file(masked, restored, mapping, verify_mapping=True)
+    assert restored.read_text(encoding="utf-8") == src.read_text(encoding="utf-8")
+
+
+def test_unmask_file_verification_rejects_a_different_document(tmp_path):
+    src = tmp_path / "source.txt"
+    masked = tmp_path / "source.masked.txt"
+    src.write_text("Contact alpha@example.com in section A", encoding="utf-8")
+    mapping = mask_file(src, masked, NO_NER)
+
+    other = tmp_path / "other.masked.txt"
+    other.write_text(masked.read_text(encoding="utf-8") + " changed", encoding="utf-8")
+    with pytest.raises(MaskError, match="SHA-256 differs"):
+        unmask_file(other, tmp_path / "other.unmasked.txt", mapping, verify_mapping=True)
+
+
+def test_unmask_file_mapping_verification_is_optional(tmp_path):
+    src = tmp_path / "source.txt"
+    masked = tmp_path / "source.masked.txt"
+    src.write_text("Contact alpha@example.com in section A", encoding="utf-8")
+    mapping = mask_file(src, masked, NO_NER)
+
+    other = tmp_path / "other.masked.txt"
+    other.write_text(masked.read_text(encoding="utf-8") + " changed", encoding="utf-8")
+    unmask_file(other, tmp_path / "other.unmasked.txt", mapping)
+
+
 def test_docx_round_trip(tmp_path):
     src = _docx(tmp_path / "a.docx", [_para(["Почта sokolova@example.ru"])])
     masked = tmp_path / "a.masked.docx"

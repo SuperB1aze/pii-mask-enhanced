@@ -64,6 +64,8 @@ def main() -> None:
     p = sub.add_parser("unmask", help="вернуть оригиналы в замаскированный файл или ответ модели")
     p.add_argument("file")
     p.add_argument("--mapping", required=True, help="файл mapping, созданный при маскировке")
+    p.add_argument("--verify-mapping", action="store_true",
+                   help="check the document SHA-256 against the JSON mapping")
     p.add_argument("-o", "--output",
                    help="дефолт: для текста - stdout, для .doc, .docx, .xls, .xlsx, .ppt и .pptx - "
                         "<stem>.unmasked.<расширение исходника>")

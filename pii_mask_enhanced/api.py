@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import shutil
 import tempfile
 import uuid
@@ -106,11 +107,13 @@ def mask_file(src: str | Path, dst: str | Path, options: Options | None = None,
 
 
 def unmask_file(src: str | Path, dst: str | Path, mapping: dict, *,
-                soffice: str | Path | None = None) -> None:
+                soffice: str | Path | None = None,
+                verify_mapping: bool = False) -> None:
     """Вернуть оригиналы в файл src и записать в dst; Office - в файл того же формата."""
     src, dst = Path(src), Path(dst)
     _check_target(src, dst)
-    validate_mapping_for_file(src, mapping)
+    if verify_mapping:
+        validate_mapping_for_file(src, mapping)
     kind = src.suffix.lower()
     try:
         if kind in OFFICE:
@@ -124,28 +127,37 @@ def unmask_file(src: str | Path, dst: str | Path, mapping: dict, *,
 
 
 def bind_mapping_to_file(path: str | Path, mapping: dict) -> str:
-    """Связать mapping с файлом через sidecar-метаданные и вернуть document_id."""
+    """Bind a masked document to its mapping using an ID and content digest."""
+    path = Path(path)
     document_id = str(uuid.uuid4())
     ids = mapping.setdefault("document_ids", [])
     if document_id not in ids:
         ids.append(document_id)
-    sidecar = Path(f"{path}.pii-id")
-    sidecar.write_text(document_id, encoding="ascii")
+    documents = mapping.setdefault("documents", [])
+    documents.append({"id": document_id, "sha256": _sha256_file(path)})
     return document_id
 
 
 def validate_mapping_for_file(path: str | Path, mapping: dict) -> None:
-    """Проверить, что sidecar замаскированного файла принадлежит mapping."""
-    ids = mapping.get("document_ids")
-    if ids is None:  # старый mapping без привязки к файлу
-        return
-    sidecar = Path(f"{path}.pii-id")
-    try:
-        document_id = sidecar.read_text(encoding="ascii").strip()
-    except OSError as exc:
-        raise MaskError(f"не найдены метаданные document_id для файла: {path}") from exc
-    if document_id not in ids:
-        raise MaskError("mapping не соответствует замаскированному файлу (document_id не совпадает)")
+    """Require the mapping to contain the SHA-256 digest of this masked file."""
+    path = Path(path)
+    documents = mapping.get("documents")
+    if not isinstance(documents, list) or not documents:
+        raise MaskError("mapping does not contain document fingerprints; remask the source with a newer library")
+    digest = _sha256_file(path)
+    if not any(
+        isinstance(document, dict) and document.get("sha256") == digest
+        for document in documents
+    ):
+        raise MaskError("mapping does not match the masked file (SHA-256 differs)")
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _mask_legacy(src: Path, dst: Path, kind: str, options: Options | None, mapping: dict | None,

@@ -153,6 +153,9 @@ class CMD:
 
     @staticmethod
     def cmd_unmask(args: argparse.Namespace) -> int:
+        if args.file == "-" and args.verify_mapping:
+            print("--verify-mapping requires a named file input", file=sys.stderr)
+            return 2
         mapping = ops.load_mapping(args.mapping)
         if mapping is None:
             print(f"mapping не найден: {args.mapping}", file=sys.stderr)
@@ -160,7 +163,7 @@ class CMD:
         src_path = Path(args.file)
         kind = src_path.suffix.lower() if args.file != "-" else ""
         if kind not in _FILES:
-            if args.file != "-":
+            if args.file != "-" and args.verify_mapping:
                 try:
                     api.validate_mapping_for_file(src_path, mapping)
                 except api.MaskError as exc:
@@ -179,7 +182,8 @@ class CMD:
             return 2
         try:
             soffice = CMD._soffice(args) if kind in api.LEGACY else None
-            api.unmask_file(src_path, out, mapping, soffice=soffice)
+            api.unmask_file(src_path, out, mapping, soffice=soffice,
+                            verify_mapping=args.verify_mapping)
         except (CliError, api.MaskError) as exc:
             print(exc, file=sys.stderr)
             return 2

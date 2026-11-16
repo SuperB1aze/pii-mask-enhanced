@@ -80,7 +80,7 @@ except MaskError as exc:
     print(exc)
 ```
 
-`mask_file` возвращает реестр замен (сохранять его - задача вызывающего) и продолжает переданный `mapping`. Рядом с результатом создаётся sidecar `<файл>.pii-id`; он связывает замаскированный файл с mapping, и `unmask_file` проверяет эту связь до восстановления. При продолжении mapping он хранит ID всех файлов, замаскированных с этим реестром. Для `.doc`, `.xls`, `.ppt` нужен LibreOffice (путь - параметр `soffice`), PDF маскируется в текст. Пояснения к выбору набора приходят в `report` (например, `report=print`). `mask_text` и `unmask_text` - то же для строки, но без привязки к файлу. `warm_up()` заранее загружает модели NER, чтобы первый документ не ждал.
+`mask_file` returns a replacement registry (saving it is the caller's responsibility) and can continue an existing `mapping`. Demasking requires only the masked file and the JSON mapping. The mapping stores each output's `document_id` and SHA-256 digest; `unmask_file(..., verify_mapping=True)` compares the document digest with those records and refuses to restore it when there is no match. This check is opt-in and disabled by default; CLI users can enable it with `--verify-mapping`. Continued mappings retain fingerprints for every file masked with that registry. `mask_text` и `unmask_text` - то же для строки, но без привязки к файлу. `warm_up()` заранее загружает модели NER, чтобы первый документ не ждал.
 
 В CLI mapping по умолчанию именуется по выходному файлу: `договор.masked.docx` получает `договор.mapping.json`. Путь можно переопределить через `--mapping`.
 
